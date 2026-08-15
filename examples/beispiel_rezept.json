@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "generator": "brotrechner 5.0.0",
+  "recipes": [
+    {
+      "name": "Einfaches Roggenmischbrot",
+      "items": [
+        {
+          "ingredient_key": "roggenvollkornmehl|",
+          "name": "Roggenvollkornmehl",
+          "manufacturer": "",
+          "amount_g": 600.0
+        },
+        {
+          "ingredient_key": "weizenmehl type 1050|",
+          "name": "Weizenmehl Type 1050",
+          "manufacturer": "",
+          "amount_g": 400.0
+        },
+        {
+          "ingredient_key": "wasser|",
+          "name": "Wasser",
+          "manufacturer": "",
+          "amount_g": 700.0
+        },
+        {
+          "ingredient_key": "salz|",
+          "name": "Salz",
+          "manufacturer": "",
+          "amount_g": 20.0
+        },
+        {
+          "ingredient_key": "sauerteig anstellgut (roggen)|",
+          "name": "Sauerteig Anstellgut (Roggen)",
+          "manufacturer": "",
+          "amount_g": 120.0
+        }
+      ],
+      "baked_weight_g": 1620.0,
+      "dough_weight_g": 1840.0,
+      "energy_kwh": 1.1,
+      "notes": "Beispielrezept. 60 Minuten bei 230 Grad fallend auf 200 Grad.",
+      "created_at": "2026-08-16T10:00:00+02:00",
+      "modified_at": "2026-08-16T10:00:00+02:00"
+    }
+  ]
+}

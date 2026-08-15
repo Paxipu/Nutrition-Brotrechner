@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "kind": "ingredient",
+  "generator": "brotrechner 5.0.0",
+  "ingredients": [
+    {
+      "name": "Roggenvollkornmehl",
+      "manufacturer": "Beispielmühle",
+      "category": "flour",
+      "is_flour": true,
+      "energy_kcal": 317.0,
+      "fat": 1.7,
+      "saturated_fat": 0.3,
+      "carbs": 60.0,
+      "sugar": 1.0,
+      "protein": 8.5,
+      "salt": 0.01,
+      "fiber": 14.0,
+      "water": 13.0,
+      "package_price": 1.98,
+      "package_size_g": 1000.0,
+      "price_source": "Beispiel, kein echter Preis",
+      "price_updated": "2026-08-16",
+      "nutrition_source": "reference",
+      "water_source": "estimated",
+      "notes": "Beispieldatei zum Ausprobieren von Zutaten > Importieren.",
+      "price_history": []
+    }
+  ]
+}
