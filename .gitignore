@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Testwerkzeuge
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.json
+htmlcov/
+
+# Nutzerdaten und Ausgaben (gehören nicht ins Repository).
+# Die führenden Schrägstriche sind wesentlich: ohne sie würde "data/" auch
+# das Paketverzeichnis src/brotrechner/data ausschließen.
+/data/
+/Nutri/
+*.backup_*
+/brot_zutaten.json
+/brot_rezepte.json
+/brot_zutaten.OLD
+
+# Altbestand: Vorgängerversion, nur lokal zum Nachschlagen
+/legacy/
+
+# Werkzeugkonfiguration der lokalen Arbeitsumgebung
+.claude/
+
+# Betriebssystem und Editoren
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

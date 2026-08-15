@@ -1,0 +1,5 @@
+# Im Repository gilt einheitlich LF; ausgecheckt wird plattformüblich.
+* text=auto eol=lf
+
+*.png binary
+*.pdf binary
