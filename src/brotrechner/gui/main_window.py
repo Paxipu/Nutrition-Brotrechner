@@ -268,7 +268,7 @@ class MainWindow(QMainWindow):
                 "Daten konnten nicht geladen werden",
                 f"{exc}\n\nDas Programm startet mit leerer Datenbank. Die vorhandene "
                 f"Datei wurde nicht verändert - eine Sicherung liegt in\n"
-                f"{paths.backup_dir()}",
+                f"{paths.backup_dir(self._data_dir)}",
             )
             self._ingredients, self._recipes = IngredientStore(), RecipeStore()
             self._refresh_all()
@@ -741,7 +741,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Sicherung angelegt",
                 f"Zutaten und Rezepte wurden gespeichert. Die vorherigen Stände liegen in\n\n"
-                f"{paths.backup_dir()}",
+                f"{paths.backup_dir(self._data_dir)}",
             )
 
     def _on_open_data_dir(self) -> None:

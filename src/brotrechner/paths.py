@@ -100,9 +100,15 @@ def settings_path() -> Path:
     return data_dir() / SETTINGS_FILE
 
 
-def backup_dir(*, create: bool = True) -> Path:
-    """Verzeichnis für automatische Sicherungen."""
-    path = data_dir() / "backups"
+def backup_dir(base: Path | None = None, *, create: bool = True) -> Path:
+    """Verzeichnis für automatische Sicherungen.
+
+    Args:
+        base: Datenverzeichnis, zu dem die Sicherungen gehören. ``None``
+            verwendet das Standardverzeichnis des Systems.
+        create: Verzeichnis anlegen, falls es fehlt.
+    """
+    path = (base or data_dir()) / "backups"
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path

@@ -157,6 +157,10 @@ class TestPaths:
     def test_backup_dir_is_created(self, data_dir: Path) -> None:
         assert paths.backup_dir().is_dir()
 
+    def test_backup_dir_follows_an_explicit_base(self, tmp_path: Path) -> None:
+        """Mit --data-dir müssen die Sicherungen dort landen, nicht im Standardort."""
+        assert paths.backup_dir(tmp_path) == tmp_path / "backups"
+
     def test_backup_dir_can_be_probed_without_creating(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

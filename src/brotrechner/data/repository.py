@@ -257,13 +257,15 @@ def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:
 
 
 def _rotate_backup(path: Path) -> None:
-    """Legt eine Sicherung an und hält nur die jüngsten :data:`MAX_BACKUPS`."""
-    # Lokaler Import: paths importiert nichts aus data, dieser Weg würde den
-    # Zyklus data -> paths -> data schließen.
-    from brotrechner.paths import backup_dir  # noqa: PLC0415
+    """Legt eine Sicherung an und hält nur die jüngsten :data:`MAX_BACKUPS`.
 
+    Die Sicherungen liegen in ``backups`` **neben** der gesicherten Datei, nicht
+    in einem festen Verzeichnis. Damit stimmt der Ablageort auch dann, wenn das
+    Programm mit ``--data-dir`` auf ein anderes Verzeichnis gerichtet wurde.
+    """
     try:
-        target_dir = backup_dir()
+        target_dir = path.parent / "backups"
+        target_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         shutil.copy2(path, target_dir / f"{path.stem}_{stamp}{path.suffix}")
 

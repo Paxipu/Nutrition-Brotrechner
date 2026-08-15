@@ -140,13 +140,25 @@ class TestAtomicWrite:
         write_json_atomic(target, {"name": "Kürbiskernöl"}, backup=False)
         assert "Kürbiskernöl" in target.read_text(encoding="utf-8")
 
-    def test_backup_is_written(self, data_dir: Path) -> None:
-        target = data_dir / "daten.json"
+    def test_backup_is_written_next_to_the_file(self, tmp_path: Path) -> None:
+        """Die Sicherung liegt neben der Datei, nicht in einem festen Ordner.
+
+        Sonst landeten Sicherungen bei ``--data-dir`` im falschen Verzeichnis.
+        """
+        target = tmp_path / "daten.json"
         write_json_atomic(target, {"stand": 1})
         write_json_atomic(target, {"stand": 2})
-        backups = list((data_dir / "backups").glob("daten_*.json"))
+        backups = list((tmp_path / "backups").glob("daten_*.json"))
         assert len(backups) == 1
         assert json.loads(backups[0].read_text(encoding="utf-8")) == {"stand": 1}
+
+    def test_only_the_most_recent_backups_are_kept(self, tmp_path: Path) -> None:
+        from brotrechner.data.repository import MAX_BACKUPS
+
+        target = tmp_path / "daten.json"
+        for stand in range(MAX_BACKUPS + 4):
+            write_json_atomic(target, {"stand": stand})
+        assert len(list((tmp_path / "backups").glob("daten_*.json"))) <= MAX_BACKUPS
 
     def test_unwritable_target_raises(self, tmp_path: Path) -> None:
         blocked = tmp_path / "datei.json"
