@@ -14,8 +14,10 @@ Aufruf::
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -70,8 +72,41 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
     )
 
     if audit:
-        steps.append(Step("Abhängigkeiten", [*python, "pip_audit", "--progress-spinner", "off"]))
+        # Geprüft werden die *deklarierten* Abhängigkeiten des Projekts, nicht
+        # die aktive Umgebung. Ohne virtuelle Umgebung würde sonst der gesamte
+        # Paketbestand des Systems bewertet - dessen Befunde haben mit diesem
+        # Projekt nichts zu tun und würden das Tor dauerhaft rot färben.
+        steps.append(
+            Step(
+                "Abhängigkeiten",
+                [*python, "pip_audit", "--progress-spinner", "off", "-r", _requirements_file()],
+                "Betroffene Untergrenze in pyproject.toml anheben.",
+            )
+        )
     return steps
+
+
+#: Liest die Einträge aus dem Block ``dependencies = [ ... ]``.
+_DEPENDENCY_BLOCK = re.compile(r"^dependencies\s*=\s*\[(.*?)\]", re.MULTILINE | re.DOTALL)
+_QUOTED = re.compile(r'"([^"]+)"')
+
+
+def _requirements_file() -> str:
+    """Schreibt die deklarierten Laufzeitabhängigkeiten in eine temporäre Datei.
+
+    Bewusst mit einem kleinen regulären Ausdruck statt mit ``tomllib``: Das
+    Projekt unterstützt Python 3.10, wo ``tomllib`` noch fehlt, und eine
+    zusätzliche Abhängigkeit allein für diesen Zweck wäre unverhältnismäßig.
+    """
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = _DEPENDENCY_BLOCK.search(text)
+    if match is None:  # pragma: no cover - pyproject.toml ist Teil des Projekts
+        raise SystemExit("In pyproject.toml wurde kein dependencies-Block gefunden.")
+
+    requirements = _QUOTED.findall(match.group(1))
+    target = Path(tempfile.mkdtemp()) / "requirements.txt"
+    target.write_text("\n".join(requirements) + "\n", encoding="utf-8")
+    return str(target)
 
 
 def main() -> int:
