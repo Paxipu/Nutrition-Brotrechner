@@ -215,6 +215,13 @@ def read_json(path: Path) -> Any:
         raise RepositoryError(
             f"{path} ist kein gültiges JSON (Zeile {exc.lineno}, Spalte {exc.colno}): {exc.msg}"
         ) from exc
+    except RecursionError as exc:
+        # Eine Datei mit zehntausenden verschachtelten Klammern bringt den
+        # JSON-Leser an die Rekursionsgrenze. Beim Import fremder Dateien darf
+        # das eine Fehlermeldung geben, aber nicht das Programm beenden.
+        raise RepositoryError(
+            f"{path} ist zu tief verschachtelt und wurde nicht eingelesen"
+        ) from exc
 
 
 def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:

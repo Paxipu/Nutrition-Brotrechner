@@ -172,6 +172,13 @@ class TestReadJson:
         with pytest.raises(RepositoryError, match="konnte nicht gelesen werden"):
             read_json(tmp_path / "weg.json")
 
+    def test_deeply_nested_file_is_rejected_not_crashed(self, tmp_path: Path) -> None:
+        """Eine bösartig verschachtelte Importdatei darf nicht durchschlagen."""
+        evil = tmp_path / "tief.json"
+        evil.write_text("[" * 60_000 + "]" * 60_000, encoding="utf-8")
+        with pytest.raises(RepositoryError, match="verschachtelt"):
+            read_json(evil)
+
     def test_broken_json_names_the_line(self, tmp_path: Path) -> None:
         broken = tmp_path / "kaputt.json"
         broken.write_text('{\n  "a": 1,\n  "b":\n}', encoding="utf-8")
