@@ -1,0 +1,115 @@
+"""Gemeinsame Testbausteine."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+from hypothesis import HealthCheck, settings
+
+from brotrechner.core.models import Category, Ingredient, Recipe, RecipeItem
+from brotrechner.core.nutrients import Nutrients
+
+# Dateisystemzugriffe machen einzelne Hypothesis-Beispiele langsam; die
+# Voreinstellung würde deshalb grundlos scheitern.
+settings.register_profile(
+    "brotrechner",
+    max_examples=100,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow],
+)
+settings.load_profile("brotrechner")
+
+
+@pytest.fixture
+def flour() -> Ingredient:
+    """Roggenvollkornmehl mit geprüften Werten und Preis."""
+    return Ingredient(
+        name="Roggenvollkornmehl",
+        manufacturer="Bauck",
+        category=Category.FLOUR,
+        nutrients=Nutrients(
+            energy_kcal=317,
+            fat=1.7,
+            saturated_fat=0.3,
+            carbs=60.0,
+            sugar=1.0,
+            protein=8.5,
+            salt=0.01,
+            fiber=14.0,
+            water=13.0,
+        ),
+        is_flour=True,
+        package_price=1.98,
+        package_size_g=1000,
+    )
+
+
+@pytest.fixture
+def water() -> Ingredient:
+    """Wasser: 100 % Wasser, praktisch kostenlos."""
+    return Ingredient(
+        name="Wasser",
+        category=Category.BASICS,
+        nutrients=Nutrients(water=100.0),
+        package_price=4.50,
+        package_size_g=1_000_000,
+    )
+
+
+@pytest.fixture
+def salt() -> Ingredient:
+    """Speisesalz."""
+    return Ingredient(
+        name="Salz",
+        category=Category.BASICS,
+        nutrients=Nutrients(salt=100.0),
+        package_price=0.19,
+        package_size_g=500,
+    )
+
+
+@pytest.fixture
+def milk() -> Ingredient:
+    """Milch - Testfall für teilweise wasserhaltige Zutaten."""
+    return Ingredient(
+        name="Milch",
+        category=Category.DAIRY,
+        nutrients=Nutrients(
+            energy_kcal=64,
+            fat=3.5,
+            saturated_fat=2.3,
+            carbs=4.8,
+            sugar=4.8,
+            protein=3.3,
+            salt=0.1,
+            water=87.5,
+        ),
+        package_price=1.15,
+        package_size_g=1030,
+    )
+
+
+@pytest.fixture
+def simple_recipe(flour: Ingredient, water: Ingredient, salt: Ingredient) -> Recipe:
+    """Reines Roggenbrot aus Mehl, Wasser und Salz."""
+    return Recipe(
+        name="Testbrot",
+        items=[
+            RecipeItem(flour.key, flour.name, flour.manufacturer, 1000.0),
+            RecipeItem(water.key, water.name, water.manufacturer, 700.0),
+            RecipeItem(salt.key, salt.name, salt.manufacturer, 20.0),
+        ],
+        baked_weight_g=1500.0,
+        dough_weight_g=1720.0,
+    )
+
+
+@pytest.fixture
+def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Isoliertes Datenverzeichnis; berührt niemals echte Nutzerdaten."""
+    target = tmp_path / "daten"
+    target.mkdir()
+    monkeypatch.setenv("BROTRECHNER_DATA_DIR", str(target))
+    yield target
