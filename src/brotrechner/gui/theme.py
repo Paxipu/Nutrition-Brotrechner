@@ -303,6 +303,48 @@ QScrollBar::handle:hover {{ background: {t.text_muted}; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
+/* ── Kalender ───────────────────────────────────────────────── */
+/* Der Kalender bringt intern eine QTableView mit. Ohne eigene Regeln erbt sie
+   die Polsterung der übrigen Tabellen - bei rund 31 Pixel Spaltenbreite bleibt
+   dann kein Platz für zweistellige Tage, und Qt kürzt sie auf "…". */
+QCalendarWidget QTableView {{
+    background: {t.surface};
+    alternate-background-color: {t.surface};
+    border: none;
+    outline: none;
+    selection-background-color: {t.accent};
+    selection-color: {t.accent_text};
+}}
+QCalendarWidget QTableView::item {{ padding: 0; }}
+QCalendarWidget QWidget#qt_calendar_navigationbar {{
+    background: {t.accent};
+    border: none;
+    min-height: 30px;
+}}
+QCalendarWidget QToolButton {{
+    color: {t.accent_text};
+    background: transparent;
+    border: none;
+    padding: 4px 10px;
+    font-weight: 600;
+}}
+QCalendarWidget QToolButton:hover {{ background: rgba(255, 255, 255, 0.16); }}
+QCalendarWidget QToolButton::menu-indicator {{ image: none; }}
+QCalendarWidget QSpinBox {{
+    color: {t.text};
+    background: {t.surface};
+    border: 1px solid {t.border};
+    min-height: 18px;
+}}
+/* Die Wochentagsleiste ist kein QTableView-Element, sondern eine eigene
+   Kopfzeile - sie braucht ihre Farben getrennt. */
+QCalendarWidget QWidget {{ alternate-background-color: {t.surface_alt}; }}
+QCalendarWidget QAbstractItemView:enabled {{
+    color: {t.text};
+    background: {t.surface};
+}}
+QCalendarWidget QAbstractItemView:disabled {{ color: {t.text_muted}; }}
+
 QGroupBox {{
     border: 1px solid {t.border};
     border-radius: {t.radius_small}px;

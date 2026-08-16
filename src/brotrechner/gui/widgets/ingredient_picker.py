@@ -10,15 +10,59 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QSize, Qt, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QComboBox, QCompleter, QTableView, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QCompleter,
+    QHeaderView,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTableView,
+    QWidget,
+)
 
 from brotrechner.core.models import Ingredient
 
 __all__ = ["IngredientPicker"]
 
 _KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+
+#: Eigene Gestaltung der Klappliste. Der abgerundete Rahmen des allgemeinen
+#: Stylesheets schneidet bei nur einer Zeile sichtbar in den Text. Die
+#: Zeilenhöhe kommt nicht von hier, sondern aus :class:`_RowHeightDelegate` -
+#: siehe die Begründung dort.
+_POPUP_STYLE = """
+QTableView { border-radius: 0; }
+QTableView::item { padding: 0 8px; }
+"""
+
+#: Zugabe zur Schrifthöhe für die Zeilen der Klappliste.
+_ROW_PADDING = 12
+
+
+class _RowHeightDelegate(QStyledItemDelegate):
+    """Legt die Zeilenhöhe der Klappliste verbindlich fest.
+
+    QCompleter berechnet die Höhe seiner Klappliste aus ``sizeHintForRow``,
+    gezeichnet wird aber mit der Zeilenhöhe des Kopfbereichs. Stammen beide aus
+    verschiedenen Quellen, laufen sie auseinander: Bei einem einzigen Treffer
+    fehlten die Unterlängen von "g" und "ß", bei mehreren erschien ein
+    Rollbalken für Zeilen, die eigentlich Platz gehabt hätten.
+
+    Über einen Delegaten kommt beides aus derselben Zahl.
+    """
+
+    def __init__(self, height: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._height = height
+
+    def sizeHint(  # noqa: N802 - Qt-Vertrag
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> QSize:
+        """Übernimmt die Breite von Qt und setzt die Höhe fest."""
+        size = super().sizeHint(option, index)
+        return QSize(size.width(), self._height)
 
 
 class IngredientPicker(QComboBox):
@@ -53,8 +97,20 @@ class IngredientPicker(QComboBox):
         popup.verticalHeader().setVisible(False)
         popup.horizontalHeader().setVisible(False)
         popup.setAlternatingRowColors(True)
-        popup.setMinimumWidth(380)
+        popup.setMinimumWidth(420)
+        # Ohne das bricht ein langer Zutatenname auf zwei Zeilen um, sobald die
+        # Zeilenhöhe dem Inhalt folgt - die Liste sähe dann zerrissen aus.
+        popup.setWordWrap(False)
+
+        row_height = self.fontMetrics().height() + _ROW_PADDING
+        popup.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        popup.verticalHeader().setDefaultSectionSize(row_height)
+        popup.setStyleSheet(_POPUP_STYLE)
         self._completer.setPopup(popup)
+
+        # Erst *nach* setPopup: QCompleter hängt der Klappliste dort einen
+        # eigenen Delegaten an und würde einen vorher gesetzten verwerfen.
+        popup.setItemDelegate(_RowHeightDelegate(row_height, popup))
         self.setCompleter(self._completer)
 
         self._completer.activated.connect(self._on_completer_activated)
@@ -77,6 +133,12 @@ class IngredientPicker(QComboBox):
         popup = self._completer.popup()
         if isinstance(popup, QTableView):
             popup.resizeColumnsToContents()
+            # Der Name bekommt den Platz, den er braucht; der Hersteller füllt
+            # den Rest. Sonst quetscht sich der längste Name in eine Spalte,
+            # die für den kürzesten bemessen wurde.
+            header = popup.horizontalHeader()
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.setCurrentIndex(-1)
         self.setEditText(current)
 

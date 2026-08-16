@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -20,6 +21,21 @@ settings.register_profile(
     suppress_health_check=[HealthCheck.too_slow],
 )
 settings.load_profile("brotrechner")
+
+
+@pytest.fixture(scope="session")
+def qapp() -> Iterator[object]:
+    """Eine Qt-Anwendung für die wenigen Tests, die Widgets brauchen.
+
+    Läuft ohne Bildschirm ("offscreen"), damit die Tests auch auf einem
+    Bauserver durchlaufen. Qt duldet nur eine Anwendungsinstanz je Prozess,
+    deshalb die Sitzungsgültigkeit.
+    """
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from brotrechner.gui.app import create_app
+
+    app = create_app([])
+    yield app
 
 
 @pytest.fixture

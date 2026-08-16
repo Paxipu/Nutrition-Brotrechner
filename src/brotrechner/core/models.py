@@ -26,6 +26,7 @@ __all__ = [
     "Recipe",
     "RecipeItem",
     "Source",
+    "as_aware",
     "normalize_key_part",
 ]
 
@@ -450,13 +451,34 @@ def _as_float(value: object) -> float:
         raise ValueError(f"Zahlenwert erwartet, war {value!r}") from exc
 
 
+def as_aware(moment: datetime) -> datetime:
+    """Ergänzt bei einem Zeitstempel ohne Zeitzone die lokale Zone.
+
+    Das Altprogramm schrieb ``datetime.now().isoformat()`` und damit
+    Zeitstempel *ohne* Zonenangabe. Neue Einträge tragen dagegen UTC. Beides
+    zusammen in eine Sortierung zu geben, wirft in Python einen ``TypeError``
+    ("can't compare offset-naive and offset-aware datetimes") - und weil das
+    Speichern in einem Qt-Signal steckt, verschwand die Meldung ungesehen und
+    das Rezept wurde nicht gespeichert.
+
+    Deshalb wird jede eingelesene Zeitangabe an dieser einen Stelle
+    vereinheitlicht. Zeitstempel ohne Zone stammen aus der lokalen Zeit des
+    Rechners, auf dem sie entstanden sind; genau so werden sie gedeutet.
+    """
+    return moment.astimezone() if moment.tzinfo is None else moment
+
+
 def _parse_datetime(value: object) -> datetime:
-    """Liest einen ISO-Zeitstempel; bei Unlesbarkeit die aktuelle Zeit."""
+    """Liest einen ISO-Zeitstempel als zonenbehaftete Zeit.
+
+    Bei Unlesbarkeit wird die aktuelle Zeit eingesetzt: Ein Rezept ohne
+    brauchbares Datum ist immer noch ein Rezept.
+    """
     if isinstance(value, datetime):
-        return value
+        return as_aware(value)
     if isinstance(value, str) and value:
         try:
-            return datetime.fromisoformat(value)
+            return as_aware(datetime.fromisoformat(value))
         except ValueError:
             pass
     return datetime.now(timezone.utc)

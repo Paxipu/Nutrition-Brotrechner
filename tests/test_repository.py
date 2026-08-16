@@ -110,6 +110,24 @@ class TestRecipeStore:
         store.remove("Testbrot")
         assert len(store) == 0
 
+    def test_sorting_survives_migrated_timestamps(self, simple_recipe: Recipe) -> None:
+        """Ein migriertes Rezept neben einem neuen darf die Sortierung nicht sprengen."""
+        migrated = Recipe.from_dict(
+            {"name": "Aus der Altversion", "created_at": "2025-10-12T00:06:20.377423"}
+        )
+        store = RecipeStore([migrated, simple_recipe])
+        assert store.sorted_by_date()[0].name == simple_recipe.name
+
+    def test_saving_a_mixed_store_works(self, tmp_path: Path, simple_recipe: Recipe) -> None:
+        """Der Fall, der beim Speichern eines neuen Rezepts abstürzte."""
+        migrated = Recipe.from_dict(
+            {"name": "Aus der Altversion", "created_at": "2025-10-12T00:06:20.377423"}
+        )
+        target = tmp_path / "recipes.json"
+        save_recipes(target, RecipeStore([migrated, simple_recipe]))
+        loaded, _ = load_recipes(target, IngredientStore())
+        assert len(loaded) == 2
+
     def test_sorting(self, simple_recipe: Recipe) -> None:
         older = Recipe(name="Alt")
         older.created_at = simple_recipe.created_at.replace(year=2020)

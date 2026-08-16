@@ -57,6 +57,7 @@ from brotrechner.gui.pages.calculator import CalculatorPage
 from brotrechner.gui.pages.ingredients import IngredientsPage
 from brotrechner.gui.pages.recipes import RecipesPage
 from brotrechner.gui.theme import SPACING, ThemeMode, Tokens, build_stylesheet, resolve_tokens
+from brotrechner.gui.widgets.cards import ClickableLabel
 from brotrechner.settings import Settings, load_settings, save_settings
 
 __all__ = ["MainWindow"]
@@ -144,6 +145,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.statusBar().showMessage("Bereit")
+        self._lbl_data_dir = ClickableLabel()
+        self._lbl_data_dir.setObjectName("Muted")
+        self._lbl_data_dir.clicked.connect(self._on_open_data_dir)
+        self.statusBar().addPermanentWidget(self._lbl_data_dir)
         self._connect()
 
     def _build_nav(self) -> QWidget:
@@ -330,6 +335,15 @@ class MainWindow(QMainWindow):
         if without_price:
             parts.append(f"{without_price} ohne Preis")
         self.statusBar().showMessage("   ·   ".join(parts))
+        # Der Ablageort steht dauerhaft rechts in der Statusleiste. Die Frage
+        # "wo liegen meine Rezepte eigentlich?" soll man nicht suchen müssen.
+        self._lbl_data_dir.setText(f"Daten: {self._data_dir}")
+        self._lbl_data_dir.setToolTip(
+            f"Zutaten:      {self._ingredients_path}\n"
+            f"Rezepte:      {self._recipes_path}\n"
+            f"Sicherungen:  {paths.backup_dir(self._data_dir, create=False)}\n\n"
+            "Anklicken öffnet den Ordner."
+        )
 
     def _flash(self, message: str) -> None:
         """Kurze Rückmeldung in der Statuszeile."""
@@ -465,7 +479,11 @@ class MainWindow(QMainWindow):
         self._recipes.add(recipe, replace_existing=True)
         if self._save_recipes():
             self._refresh_all()
-            self._flash(f"Rezept „{recipe.name}“ gespeichert")
+            # Auf die Rezepteseite wechseln und den frischen Eintrag markieren:
+            # Ohne diese Rückmeldung bleibt offen, ob das Speichern geklappt hat.
+            self.nav.setCurrentRow(2)
+            self.page_recipes.select_recipe(recipe.name)
+            self._flash(f"Rezept „{recipe.name}“ gespeichert in {self._recipes_path}")
 
     def _on_load_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)

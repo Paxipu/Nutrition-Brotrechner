@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from hypothesis import given
@@ -15,6 +15,7 @@ from brotrechner.core.models import (
     Recipe,
     RecipeItem,
     Source,
+    as_aware,
     normalize_key_part,
 )
 from brotrechner.core.nutrients import Nutrients
@@ -197,6 +198,41 @@ class TestSerialisation:
     def test_broken_timestamp_falls_back_to_now(self) -> None:
         recipe = Recipe.from_dict({"name": "X", "created_at": "irgendwann"})
         assert recipe.created_at.year >= 2024
+
+
+class TestTimezoneHandling:
+    """Zeitstempel müssen vergleichbar sein - sonst scheitert jede Sortierung.
+
+    Das Altprogramm schrieb Zeitangaben ohne Zonenangabe, neue Einträge tragen
+    UTC. Werden beide zusammen sortiert, wirft Python einen TypeError. Weil das
+    Speichern in einem Qt-Signal steckte, verschwand die Meldung ungesehen und
+    das Rezept wurde stillschweigend nicht gespeichert.
+    """
+
+    def test_naive_timestamp_becomes_aware(self) -> None:
+        recipe = Recipe.from_dict({"name": "Alt", "created_at": "2025-10-12T00:06:20.377423"})
+        assert recipe.created_at.tzinfo is not None
+
+    def test_aware_timestamp_is_preserved(self) -> None:
+        recipe = Recipe.from_dict({"name": "Neu", "created_at": "2026-08-16T10:00:00+02:00"})
+        assert recipe.created_at.utcoffset() == timedelta(hours=2)
+
+    def test_old_and_new_recipes_can_be_sorted_together(self) -> None:
+        """Genau der Fall, der das Speichern zum Absturz brachte."""
+        old = Recipe.from_dict({"name": "Alt", "created_at": "2025-10-12T00:06:20.377423"})
+        new = Recipe(name="Neu")
+        assert sorted([old, new], key=lambda r: r.created_at)[0] is old
+
+    def test_price_entries_are_also_normalised(self) -> None:
+        entry = PriceEntry.from_dict({"recorded_at": "2025-01-01T10:00:00", "package_price": 1.0})
+        assert entry.recorded_at.tzinfo is not None
+
+    def test_as_aware_leaves_aware_values_untouched(self) -> None:
+        moment = datetime(2026, 8, 16, 12, 0, tzinfo=timezone.utc)
+        assert as_aware(moment) is moment
+
+    def test_as_aware_attaches_the_local_zone(self) -> None:
+        assert as_aware(datetime(2026, 8, 16, 12, 0)).tzinfo is not None
 
 
 class TestRecipe:

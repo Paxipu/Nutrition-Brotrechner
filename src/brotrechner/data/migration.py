@@ -31,6 +31,7 @@ from brotrechner.core.models import (
     Recipe,
     RecipeItem,
     Source,
+    as_aware,
     normalize_key_part,
 )
 from brotrechner.core.nutrients import Nutrients
@@ -318,10 +319,15 @@ def looks_like_legacy_recipes(raw: object) -> bool:
 
 
 def _parse_legacy_datetime(value: object) -> datetime:
-    """Liest einen ISO-Zeitstempel des Altformats."""
+    """Liest einen ISO-Zeitstempel des Altformats als zonenbehaftete Zeit.
+
+    Das Altprogramm schrieb Zeitstempel ohne Zonenangabe. Sie werden hier als
+    lokale Zeit gedeutet, damit sie sich mit neu entstandenen Einträgen
+    vergleichen lassen.
+    """
     if isinstance(value, str) and value:
         try:
-            return datetime.fromisoformat(value)
+            return as_aware(datetime.fromisoformat(value))
         except ValueError:
             pass
     return datetime.now(timezone.utc)

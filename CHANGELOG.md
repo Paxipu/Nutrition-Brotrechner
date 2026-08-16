@@ -3,6 +3,35 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [5.0.1] – 2026-08-16
+
+### Behoben
+
+- **Rezepte ließen sich nach der Datenübernahme nicht speichern.** Die aus der
+  Vorgängerversion übernommenen Rezepte trugen Zeitstempel ohne Zeitzone, neu
+  angelegte dagegen mit. Beim Sortieren beider zusammen brach Python mit
+  `TypeError: can't compare offset-naive and offset-aware datetimes` ab. Weil
+  das Speichern in einem Qt-Signal steckt, verschwand die Meldung ungesehen:
+  Für den Anwender passierte schlicht nichts - kein Rezept, keine Fehlermeldung.
+  Eingelesene Zeitangaben ohne Zone werden jetzt als lokale Zeit gedeutet.
+- **Die Vorschlagsliste der Zutatensuche schnitt Text ab.** Bei genau einem
+  Treffer fehlten die Unterlängen von "g" und "ß". QCompleter berechnet die
+  Höhe seiner Klappliste aus dem Platzbedarf einer Zeile, zeichnet aber mit der
+  eingestellten Zeilenhöhe; beide Zahlen stammten aus verschiedenen Quellen.
+  Sie kommen jetzt aus einer.
+- **Zweistellige Tage im Kalender erschienen als "…".** Die allgemeine
+  Tabellenregel des Stylesheets gab jeder Zelle 6 Pixel Polsterung an beiden
+  Seiten; bei rund 31 Pixel Spaltenbreite blieb für "27" kein Platz. Der
+  Kalender hat jetzt eigene Regeln - samt Navigationsleiste in der Programmfarbe.
+
+### Geändert
+
+- Nach dem Speichern wechselt das Programm auf die Rezepteseite und markiert
+  den frischen Eintrag. Vorher blieb offen, ob das Speichern geklappt hat.
+- Der **Ablageort der Daten steht dauerhaft in der Statusleiste** und öffnet
+  auf Klick den Ordner. Die Frage "wo liegen meine Rezepte eigentlich?" soll
+  man nicht suchen müssen.
+
 ## [5.0.0] – 2026-08-16
 
 Vollständiger Umbau des früheren Einzelskripts (Brot-Kalkulator 4.0) zu einem

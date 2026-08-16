@@ -146,6 +146,25 @@ class RecipesPage(QWidget):
         )
         self._update_preview()
 
+    def select_recipe(self, name: str) -> bool:
+        """Markiert ein Rezept und scrollt es ins Bild.
+
+        Wird nach dem Speichern aufgerufen, damit der frische Eintrag nicht
+        irgendwo in einer langen Liste gesucht werden muss.
+        """
+        self.txt_search.clear()
+        for row in range(self._model.rowCount()):
+            recipe = self._model.recipe_at(row)
+            if recipe is not None and recipe.name == name:
+                self.table.selectRow(row)
+                self.table.scrollTo(
+                    self._model.index(row, 0),
+                    QAbstractItemView.ScrollHint.PositionAtCenter,
+                )
+                self.table.setFocus()
+                return True
+        return False
+
     def selected_recipe(self) -> Recipe | None:
         """Aktuell markiertes Rezept."""
         rows = self.table.selectionModel().selectedRows()

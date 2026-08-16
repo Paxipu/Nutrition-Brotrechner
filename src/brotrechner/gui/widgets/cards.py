@@ -8,8 +8,8 @@ Textwüste gesucht werden zu müssen.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPaintEvent
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -22,7 +22,28 @@ from PySide6.QtWidgets import (
 from brotrechner.core.reference import AmpelLevel
 from brotrechner.gui.theme import SPACING, Tokens
 
-__all__ = ["AmpelDot", "Card", "IntakeBar", "StatCard", "separator"]
+__all__ = ["AmpelDot", "Card", "ClickableLabel", "IntakeBar", "StatCard", "separator"]
+
+
+class ClickableLabel(QLabel):
+    """Beschriftung, die sich wie eine Schaltfläche anklicken lässt.
+
+    Wird für den Pfadhinweis in der Statusleiste gebraucht. Ein eigenes Widget
+    statt einer überschriebenen Methode am Einzelobjekt: Letzteres lässt sich
+    weder typprüfen noch wiederverwenden.
+    """
+
+    clicked = Signal()
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, ev: QMouseEvent) -> None:  # noqa: N802 - Qt-Vertrag
+        """Löst bei der linken Maustaste :attr:`clicked` aus."""
+        if ev.button() is Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(ev)
 
 
 class Card(QFrame):
