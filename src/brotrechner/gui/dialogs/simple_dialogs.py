@@ -16,13 +16,14 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QRadioButton,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from brotrechner import __version__
+from brotrechner import __author__, __version__
 from brotrechner.core.models import Recipe
 from brotrechner.core.validation import Finding, Severity
 from brotrechner.data.portable import ConflictPolicy, ImportPreview
@@ -32,6 +33,25 @@ from brotrechner.gui.widgets.cards import Card
 from brotrechner.i18n import format_number
 
 __all__ = ["AboutDialog", "ImportDialog", "ScaleDialog", "ValidationDialog"]
+
+#: Inhaltsbreite des Über-Dialogs in Pixeln.
+_ABOUT_WIDTH = 540
+
+
+def _rich_label(html: str, *, muted: bool = False) -> QLabel:
+    """Mehrzeilige Beschriftung mit anklickbaren Verweisen."""
+    label = QLabel(html)
+    label.setWordWrap(True)
+    label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+    label.setTextFormat(Qt.TextFormat.RichText)
+    label.setOpenExternalLinks(True)
+    label.setTextInteractionFlags(
+        Qt.TextInteractionFlag.TextBrowserInteraction
+        | Qt.TextInteractionFlag.LinksAccessibleByMouse
+    )
+    if muted:
+        label.setObjectName("Muted")
+    return label
 
 
 class ScaleDialog(QDialog):
@@ -302,7 +322,13 @@ class ImportDialog(QDialog):
 
 
 class AboutDialog(QDialog):
-    """Programminfo mit Datenpfaden und Zustand der optionalen Pakete."""
+    """Programminfo mit Urheberschaft, Lizenz, Datenpfaden und Paketzustand.
+
+    Die GPL verlangt, dass ein Programm mit interaktiver Oberfläche beim
+    Anwender einen kurzen Hinweis auf Urheberrecht, fehlende Gewährleistung
+    und die Bezugsquelle des Quelltextes zugänglich macht. Genau das leistet
+    dieser Dialog; die vollständige Lizenz liegt als Datei ``LICENSE`` bei.
+    """
 
     def __init__(
         self,
@@ -314,24 +340,70 @@ class AboutDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Über Brotrechner")
-        self.setMinimumWidth(520)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING["md"])
+        # Der Dialog soll genau so hoch werden, wie sein Inhalt es verlangt.
+        # Ohne diese Vorgabe rechnet Qt die Höhe umbrochener Rich-Text-Absätze
+        # erst nach dem Anzeigen aus und lässt darunter eine leere Fläche.
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
         title = QLabel(f"Brotrechner {__version__}")
         title.setObjectName("PageTitle")
+        # Ohne feste Höhe zieht das Layout die Überschrift auseinander und
+        # reißt eine Lücke zum Fließtext darunter.
+        title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         layout.addWidget(title)
 
-        description = QLabel(
+        description = _rich_label(
             "Nährwerte, Kosten, Bäckerprozent und Teigausbeute für selbstgebackenes Brot.<br>"
-            "Nährwertdeklaration und Toleranzen folgen der VO (EU) Nr. 1169/2011."
+            "Nährwertdeklaration und Toleranzen folgen der VO (EU) Nr. 1169/2011.",
+            muted=True,
         )
-        description.setWordWrap(True)
-        description.setObjectName("Muted")
         layout.addWidget(description)
 
+        origin = Card("Herkunft und Lizenz")
+        # Feste Breite: Zusammen mit SetFixedSize bestimmt sie, für welche
+        # Zeilenbreite Qt die Höhe der umbrochenen Absätze berechnet.
+        origin.setFixedWidth(_ABOUT_WIDTH)
+        origin.add_widget(
+            _rich_label(
+                f"Copyright © 2026 <b>{__author__}</b><br>"
+                "Konzept, fachliche Vorgaben und Abnahme: Martin Kraus."
+            )
+        )
+        origin.add_widget(
+            _rich_label(
+                "<b>Der gesamte Quelltext wurde von Claude (Anthropic) erzeugt.</b> "
+                "Kein Teil des Programms ist von Hand geschrieben; die Vorgaben, die "
+                "fachlichen Entscheidungen und die Abnahme stammen von Martin Kraus.",
+                muted=True,
+            )
+        )
+        origin.add_widget(
+            _rich_label(
+                "Freigegeben unter der <b>GNU General Public License, Version 3</b> "
+                "oder einer späteren Version. Dieses Programm kommt <b>ohne jede "
+                "Gewährleistung</b>. Es ist freie Software, und Sie dürfen es unter "
+                "den Bedingungen der GPL weitergeben. Der vollständige Lizenztext "
+                "liegt als Datei <code>LICENSE</code> bei und steht unter "
+                '<a href="https://www.gnu.org/licenses/gpl-3.0.html">'
+                "gnu.org/licenses/gpl-3.0.html</a>.",
+                muted=True,
+            )
+        )
+        origin.add_widget(
+            _rich_label(
+                "Quelltext: "
+                '<a href="https://github.com/Paxipu/Nutrition-Brotrechner">'
+                "github.com/Paxipu/Nutrition-Brotrechner</a>",
+                muted=True,
+            )
+        )
+        layout.addWidget(origin)
+
         facts = Card("Zustand")
+        facts.setFixedWidth(_ABOUT_WIDTH)
         facts.add_widget(QLabel(f"{ingredient_count} Zutaten · {recipe_count} Rezepte"))
         path_label = QLabel(f"Datenverzeichnis:<br><code>{data_dir}</code>")
         path_label.setWordWrap(True)

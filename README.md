@@ -1,9 +1,14 @@
-# Brotrechner
+# Nutrition-Brotrechner
 
 Nährwerte, Kosten, Bäckerprozent und Teigausbeute für selbstgebackenes Brot –
 mit druckfertigem Etikett nach EU-Kennzeichnungsrecht.
 
 Läuft unter **Linux, Windows und macOS**.
+
+> **Vollständig KI-generiert.** Der gesamte Quelltext dieses Projekts wurde von
+> Claude (Anthropic) erzeugt. Kein Teil ist von Hand geschrieben. Die fachlichen
+> Vorgaben, die Entscheidungen über Aufbau und Funktionsumfang sowie die Abnahme
+> stammen von **Martin Kraus**.
 
 ![Rechner](docs/bilder/rechner.png)
 
@@ -34,8 +39,8 @@ Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export.
 ## Installation
 
 ```bash
-git clone https://github.com/Paxipu/brotrechner.git
-cd brotrechner
+git clone https://github.com/Paxipu/Nutrition-Brotrechner.git
+cd Nutrition-Brotrechner
 python -m venv .venv
 source .venv/bin/activate        # Windows:  .venv\Scripts\activate
 pip install -e ".[pdf]"
@@ -150,11 +155,39 @@ das Ergebnis von `tools/build_seed_database.py`. Dort steht zu jedem Wert die
 Quelle, und der Brennwert wird gerechnet statt abgetippt. Änderungen gehören in
 den Generator, nicht in die erzeugte Datei.
 
+## Urheberschaft
+
+Copyright © 2026 **Martin Kraus**
+
+Konzept, fachliche Vorgaben, Entscheidungen über Aufbau und Funktionsumfang
+sowie die Abnahme: Martin Kraus. Der gesamte Quelltext, die Testsuite und die
+Dokumentation wurden von **Claude (Anthropic)** erzeugt.
+
+Das gilt ausdrücklich auch für die mitgelieferte Zutatendatenbank: Sie ist die
+Ausgabe eines Generators, in dem zu jedem Wert eine Quelle hinterlegt ist. Was
+gegenüber der Vorgängerfassung geändert wurde und warum, steht nachprüfbar in
+[`docs/DATENKORREKTUREN.md`](docs/DATENKORREKTUREN.md).
+
 ## Lizenz
 
-MIT – siehe [LICENSE](LICENSE).
+**GNU General Public License, Version 3 oder später** (GPL-3.0-or-later) –
+vollständiger Text in [LICENSE](LICENSE).
+
+Dieses Programm ist freie Software: Sie dürfen es weitergeben und/oder
+verändern. Es wird in der Hoffnung verbreitet, dass es nützlich ist, jedoch
+**ohne jede Gewährleistung** – auch ohne die implizite Gewährleistung der
+Marktreife oder der Eignung für einen bestimmten Zweck.
+
+Wer das Programm weitergibt oder darauf aufbaut, muss den Quelltext des
+abgeleiteten Werks ebenfalls unter der GPL zugänglich machen.
+
+Die verwendeten Bibliotheken sind damit vereinbar: PySide6 steht unter der
+LGPL, Pillow unter der MIT-CMU-Lizenz, reportlab unter der BSD-Lizenz.
+
+## Haftungsausschluss zu den Nährwerten
 
 Die Nährwerte der mitgelieferten Startdatenbank sind Referenz- und
-Handelswerte und ersetzen keine Laboranalyse. Für Lebensmittel, die in Verkehr
-gebracht werden, gelten die Anforderungen der VO (EU) Nr. 1169/2011; die
-Verantwortung für die Richtigkeit einer Kennzeichnung liegt beim Inverkehrbringer.
+Handelswerte und ersetzen **keine Laboranalyse**. Für Lebensmittel, die in
+Verkehr gebracht werden, gelten die Anforderungen der VO (EU) Nr. 1169/2011;
+die Verantwortung für die Richtigkeit einer Kennzeichnung liegt beim
+Inverkehrbringer.

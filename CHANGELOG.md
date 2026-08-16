@@ -31,6 +31,9 @@ automatisch übernommen.
 
 ### Geändert
 
+- **Lizenz auf GPL-3.0-or-later** festgelegt. Urheberrechtsvermerk, Hinweis
+  auf die fehlende Gewährleistung und die Herkunft des Quelltextes stehen im
+  Programm unter *Hilfe → Über Brotrechner*.
 - **Oberfläche auf PySide6 (Qt) umgestellt.** wxPython lässt sich unter Linux
   nur mit erheblichem Aufwand installieren; PySide6 kommt als fertiges Paket
   für alle drei Systeme.

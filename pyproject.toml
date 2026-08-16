@@ -8,15 +8,15 @@ version = "5.0.0"
 description = "Nutrition, cost and baker's percentage calculator for home-baked bread (EU 1169/2011 compliant labels)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "Paxipu" }]
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Martin Kraus" }]
 keywords = ["bread", "baking", "nutrition", "bakers-percentage", "food-labelling", "eu-1169-2011"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: X11 Applications :: Qt",
     "Environment :: Win32 (MS Windows)",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Natural Language :: German",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -48,9 +48,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Paxipu/brotrechner"
-Issues = "https://github.com/Paxipu/brotrechner/issues"
-Changelog = "https://github.com/Paxipu/brotrechner/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Paxipu/Nutrition-Brotrechner"
+Issues = "https://github.com/Paxipu/Nutrition-Brotrechner/issues"
+Changelog = "https://github.com/Paxipu/Nutrition-Brotrechner/blob/main/CHANGELOG.md"
 
 [project.scripts]
 brotrechner = "brotrechner.cli:main"
