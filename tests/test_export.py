@@ -174,38 +174,25 @@ class TestLabelLayout:
         canvas = Image.new("RGB", (width, height))
         draw = ImageDraw.Draw(canvas)
         metrics = module._fitting_metrics(
-            draw, BREAD, options, FONTS, options.dpi / 25.4, width, height
+            draw,
+            BREAD,
+            options,
+            fonts=FONTS,
+            pixels_per_mm=options.dpi / 25.4,
+            width=width,
+            height=height,
         )
         margin = metrics.mm(5.0)
         left = margin + metrics.mm(2.0)
         right = width - margin - metrics.mm(2.0)
         palette = options.theme.colors
 
-        y = module._draw_head(
-            draw,
-            options,
-            palette,
-            FONTS,
-            metrics,
-            left=left,
-            right=right,
-            top=margin + metrics.mm(2.0),
-        )
-        y = module._draw_nutrition(
-            draw, BREAD, options, palette, FONTS, metrics, left=left, right=right, top=y
-        )
-        y = module._draw_net_weight(
-            draw, options, palette, FONTS, metrics, left=left, right=right, top=y
-        )
+        shared = {"palette": palette, "fonts": FONTS, "m": metrics, "left": left, "right": right}
+        y = module._draw_head(draw, options, **shared, top=margin + metrics.mm(2.0))
+        y = module._draw_nutrition(draw, BREAD, options, **shared, top=y)
+        y = module._draw_net_weight(draw, options, **shared, top=y)
         footer_top = module._draw_footer(
-            draw,
-            options,
-            palette,
-            FONTS,
-            metrics,
-            left=left,
-            right=right,
-            bottom=height - margin - metrics.mm(2.0),
+            draw, options, **shared, bottom=height - margin - metrics.mm(2.0)
         )
         return y, footer_top
 
@@ -270,10 +257,16 @@ class TestLabelLayout:
         width, height = options.pixel_size()
         draw = ImageDraw.Draw(Image.new("RGB", (width, height)))
         metrics = module._fitting_metrics(
-            draw, BREAD, options, FONTS, options.dpi / 25.4, width, height
+            draw,
+            BREAD,
+            options,
+            fonts=FONTS,
+            pixels_per_mm=options.dpi / 25.4,
+            width=width,
+            height=height,
         )
         needed = module._required_height(
-            draw, BREAD, options, FONTS, metrics, width, full_ingredients=True
+            draw, BREAD, options, fonts=FONTS, m=metrics, width=width, full_ingredients=True
         )
         assert needed <= height
 

@@ -240,7 +240,15 @@ def render_label(
     image = Image.new("RGB", (width, height), palette.background)
     draw = ImageDraw.Draw(image)
 
-    metrics = _fitting_metrics(draw, nutrients, options, fonts, options.dpi / 25.4, width, height)
+    metrics = _fitting_metrics(
+        draw,
+        nutrients,
+        options,
+        fonts=fonts,
+        pixels_per_mm=options.dpi / 25.4,
+        width=width,
+        height=height,
+    )
     margin = metrics.mm(5.0)
     left = margin + metrics.mm(2.0)
     right = width - margin - metrics.mm(2.0)
@@ -255,24 +263,40 @@ def render_label(
     y = _draw_head(
         draw,
         options,
-        palette,
-        fonts,
-        metrics,
+        palette=palette,
+        fonts=fonts,
+        m=metrics,
         left=left,
         right=right,
         top=margin + metrics.mm(2.0),
     )
     y = _draw_nutrition(
-        draw, nutrients, options, palette, fonts, metrics, left=left, right=right, top=y
+        draw,
+        nutrients,
+        options,
+        palette=palette,
+        fonts=fonts,
+        m=metrics,
+        left=left,
+        right=right,
+        top=y,
     )
-    y = _draw_net_weight(draw, options, palette, fonts, metrics, left=left, right=right, top=y)
-
+    y = _draw_net_weight(
+        draw,
+        options,
+        palette=palette,
+        fonts=fonts,
+        m=metrics,
+        left=left,
+        right=right,
+        top=y,
+    )
     footer_top = _draw_footer(
         draw,
         options,
-        palette,
-        fonts,
-        metrics,
+        palette=palette,
+        fonts=fonts,
+        m=metrics,
         left=left,
         right=right,
         bottom=height - margin - metrics.mm(2.0),
@@ -282,9 +306,9 @@ def render_label(
         _draw_ingredients(
             draw,
             options,
-            palette,
-            fonts,
-            metrics,
+            palette=palette,
+            fonts=fonts,
+            m=metrics,
             left=left,
             right=right,
             top=y,
@@ -298,6 +322,7 @@ def _fitting_metrics(
     draw: ImageDraw.ImageDraw,
     nutrients: Nutrients,
     options: LabelOptions,
+    *,
     fonts: FontSet,
     pixels_per_mm: float,
     width: int,
@@ -316,14 +341,15 @@ def _fitting_metrics(
             break
         metrics = _Metrics(pixels_per_mm, factor)
         needed = _required_height(
-            draw, nutrients, options, fonts, metrics, width, full_ingredients=True
+            draw, nutrients, options, fonts=fonts, m=metrics, width=width, full_ingredients=True
         )
         if needed <= height:
             return metrics
 
     for factor in _SCALE_STEPS:
         metrics = _Metrics(pixels_per_mm, factor)
-        if _required_height(draw, nutrients, options, fonts, metrics, width) <= height:
+        needed = _required_height(draw, nutrients, options, fonts=fonts, m=metrics, width=width)
+        if needed <= height:
             return metrics
     return _Metrics(pixels_per_mm, _SCALE_STEPS[-1])
 
@@ -332,10 +358,10 @@ def _required_height(
     draw: ImageDraw.ImageDraw,
     nutrients: Nutrients,
     options: LabelOptions,
+    *,
     fonts: FontSet,
     m: _Metrics,
     width: int,
-    *,
     full_ingredients: bool = False,
 ) -> int:
     """Platzbedarf bei der gegebenen Stufe.
@@ -434,10 +460,10 @@ def _font_hint(fonts: FontSet, m: _Metrics) -> Font:
 def _draw_head(
     draw: ImageDraw.ImageDraw,
     options: LabelOptions,
+    *,
     palette: _Palette,
     fonts: FontSet,
     m: _Metrics,
-    *,
     left: int,
     right: int,
     top: int,
@@ -485,10 +511,10 @@ def _draw_nutrition(
     draw: ImageDraw.ImageDraw,
     nutrients: Nutrients,
     options: LabelOptions,
+    *,
     palette: _Palette,
     fonts: FontSet,
     m: _Metrics,
-    *,
     left: int,
     right: int,
     top: int,
@@ -525,10 +551,10 @@ def _draw_nutrition(
 def _draw_net_weight(
     draw: ImageDraw.ImageDraw,
     options: LabelOptions,
+    *,
     palette: _Palette,
     fonts: FontSet,
     m: _Metrics,
-    *,
     left: int,
     right: int,
     top: int,
@@ -551,10 +577,10 @@ def _draw_net_weight(
 def _draw_footer(
     draw: ImageDraw.ImageDraw,
     options: LabelOptions,
+    *,
     palette: _Palette,
     fonts: FontSet,
     m: _Metrics,
-    *,
     left: int,
     right: int,
     bottom: int,
@@ -584,10 +610,10 @@ def _draw_footer(
 def _draw_ingredients(
     draw: ImageDraw.ImageDraw,
     options: LabelOptions,
+    *,
     palette: _Palette,
     fonts: FontSet,
     m: _Metrics,
-    *,
     left: int,
     right: int,
     top: int,

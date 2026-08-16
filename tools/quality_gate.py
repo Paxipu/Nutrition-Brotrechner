@@ -22,6 +22,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+#: Regeln, die ruff derzeit noch als Vorschau führt, in einer neueren Fassung
+#: aber fest einschaltet. Sie werden gesondert geprüft, damit die CI nicht
+#: Verstöße meldet, die es lokal noch gar nicht gibt.
+_PREVIEW_RULES = "PLR0917"
 SRC = "src/brotrechner"
 TESTS = "tests"
 MIN_COVERAGE = 90
@@ -49,6 +54,25 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
             "Format",
             [*python, "ruff", "format", "--check", SRC, TESTS, "tools"],
             "ruff format schreibt die Dateien um.",
+        ),
+        # Vorschau-Regeln, die eine kommende ruff-Fassung fest einschalten wird.
+        # Ohne diesen Schritt fällt so etwas erst in der CI auf, weil dort eine
+        # neuere Fassung installiert wird als auf dem Entwicklungsrechner - genau
+        # das ist hier zweimal passiert.
+        Step(
+            "Lint (Vorschau)",
+            [
+                *python,
+                "ruff",
+                "check",
+                "--preview",
+                "--select",
+                _PREVIEW_RULES,
+                SRC,
+                TESTS,
+                "tools",
+            ],
+            "Diese Regeln gelten ab der nächsten ruff-Nebenversion.",
         ),
         Step("Typen", [*python, "mypy", SRC], "mypy läuft im Strict-Modus; siehe pyproject.toml."),
     ]
