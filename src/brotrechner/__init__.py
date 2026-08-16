@@ -33,7 +33,7 @@ Alle Schichten dürfen nur "nach unten" importieren: GUI → export/data → cor
 
 from __future__ import annotations
 
-__version__ = "5.0.2"
+__version__ = "5.0.3"
 __author__ = "Martin Kraus"
 __license__ = "GPL-3.0-or-later"
 

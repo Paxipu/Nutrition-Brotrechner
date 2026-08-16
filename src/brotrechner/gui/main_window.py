@@ -56,6 +56,7 @@ from brotrechner.gui.dialogs.simple_dialogs import (
 from brotrechner.gui.pages.calculator import CalculatorPage
 from brotrechner.gui.pages.ingredients import IngredientsPage
 from brotrechner.gui.pages.recipes import RecipesPage
+from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING, ThemeMode, Tokens, build_stylesheet, resolve_tokens
 from brotrechner.gui.widgets.cards import ClickableLabel
 from brotrechner.settings import Settings, load_settings, save_settings
@@ -463,7 +464,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-            if answer is not QMessageBox.StandardButton.Yes:
+            if not confirmed(answer):
                 return
             existing = self._recipes.get(recipe.name)
             if existing is not None:
@@ -562,7 +563,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
-        if answer is not QMessageBox.StandardButton.Yes:
+        if not confirmed(answer):
             return
         self._recipes.remove(recipe.name)
         if self._save_recipes():
@@ -651,7 +652,7 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
-        if answer is not QMessageBox.StandardButton.Yes:
+        if not confirmed(answer):
             return
         self._ingredients.remove(key)
         if self._save_ingredients():

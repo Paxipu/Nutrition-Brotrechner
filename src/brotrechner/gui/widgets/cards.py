@@ -41,7 +41,7 @@ class ClickableLabel(QLabel):
 
     def mousePressEvent(self, ev: QMouseEvent) -> None:  # noqa: N802 - Qt-Vertrag
         """Löst bei der linken Maustaste :attr:`clicked` aus."""
-        if ev.button() is Qt.MouseButton.LeftButton:
+        if ev.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(ev)
 

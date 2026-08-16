@@ -122,7 +122,7 @@ class IngredientTableModel(QAbstractTableModel):
         orientation: Qt.Orientation,
         role: int = Qt.ItemDataRole.DisplayRole,
     ) -> Any:
-        if orientation is not Qt.Orientation.Horizontal:
+        if orientation != Qt.Orientation.Horizontal:
             return None
         column = COLUMNS[section]
         if role == Qt.ItemDataRole.DisplayRole:

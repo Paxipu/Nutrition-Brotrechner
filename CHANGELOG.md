@@ -3,6 +3,35 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [5.0.3] – 2026-08-16
+
+### Behoben
+
+- **„Ja“ tat dasselbe wie „Nein“: Jede Rückfrage blieb wirkungslos.** Ein
+  bearbeitetes Rezept ließ sich nicht unter demselben Namen überschreiben - die
+  Nachfrage erschien, danach standen weiterhin die alten Werte in der Datei.
+  Ebenso wenig ließ sich ein Rezept löschen. Ursache: PySide6 gibt die
+  angeklickte Schaltfläche von `QMessageBox.question` nicht als Enum-Mitglied
+  zurück, sondern als blanke Zahl (nachgemessen mit 6.11: `type(antwort)` ist
+  `int`). Der Code verglich sie mit `is` gegen `StandardButton.Yes` - und das
+  ist bei zwei verschiedenen Objekten immer falsch, gleichgültig welche
+  Schaltfläche der Anwender gewählt hat. Die Bestätigungszweige brachen deshalb
+  ausnahmslos ab; sichtbar war davon nichts, hörbar nur der Systemton des
+  Dialogs. Betroffen waren vier Rückfragen: Rezept überschreiben, Rezept
+  löschen, Zutat löschen und Etikettdatei überschreiben. Verglichen wird jetzt
+  an jeder Qt-Grenze mit `==`, gebündelt in `gui/qt_compat.confirmed()`.
+
+### Geändert
+
+- Ein Test durchsucht das gesamte Paket nach Identitätsvergleichen gegen
+  Qt-Enums und schlägt an, sobald einer auftaucht. Damit ist nicht nur diese
+  eine Stelle behoben, sondern der ganze Fehlertyp ausgeschlossen - Qt reicht
+  Enum-Werte je nach Fassung mal als Mitglied, mal als Zahl heraus (die Rolle
+  in `headerData` ist schon heute eine Zahl).
+- Die früheren Tests liefen an diesem Fehler vorbei, weil ihre Dialogattrappen
+  das Enum-Mitglied zurückgaben statt der Zahl, die Qt tatsächlich liefert. Sie
+  bilden das Verhalten jetzt originalgetreu ab.
+
 ## [5.0.2] – 2026-08-16
 
 ### Behoben

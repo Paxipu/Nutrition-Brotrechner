@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from brotrechner.core.analysis import RecipeAnalysis
 from brotrechner.export.label import LabelOptions, LabelSize, LabelTheme, render_label
+from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
 
@@ -352,7 +353,7 @@ class LabelDialog(QDialog):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
-            if answer is not QMessageBox.StandardButton.Yes:
+            if not confirmed(answer):
                 return
         if self._write(path):
             QMessageBox.information(self, "Gespeichert", f"Etikett gespeichert:\n{path}")

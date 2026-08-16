@@ -1,0 +1,41 @@
+"""Umgang mit Qt-Werten, die nicht als Enum-Mitglied zurückkommen.
+
+PySide6 reicht Enum-Werte nicht durchgängig als Enum-Mitglied heraus. Die
+geklickte Schaltfläche von :meth:`QMessageBox.question` kommt als blanke Zahl
+zurück - nachgemessen mit PySide6 6.11 ist ``type(antwort)`` schlicht ``int``.
+Dasselbe gilt für die Rolle, die Qt an ``data()`` und ``headerData()``
+übergibt.
+
+Ein Identitätsvergleich gegen ``StandardButton.Yes`` ist damit *immer* falsch.
+Weil er in einem Bestätigungszweig stand, tat "Ja" dasselbe wie "Nein":
+Überschreiben und Löschen brachen stumm ab, zu hören war nur der Systemton des
+Dialogs. Dieselbe Bauart hatte schon der Fehler mit den ``str``-Enums, die
+PySide6 durch ``QVariant`` einebnet.
+
+Deshalb gilt an jeder Qt-Grenze ``==`` statt ``is``. Diese Datei hält die Regel
+an einer Stelle fest; ``test_no_identity_comparison_against_qt_enums`` wacht
+darüber, dass sie im ganzen Paket eingehalten wird.
+"""
+
+from __future__ import annotations
+
+from PySide6.QtWidgets import QMessageBox
+
+__all__ = ["confirmed"]
+
+
+def confirmed(
+    answer: QMessageBox.StandardButton | int,
+    button: QMessageBox.StandardButton = QMessageBox.StandardButton.Yes,
+) -> bool:
+    """Prüft, welche Schaltfläche eines Rückfragedialogs gewählt wurde.
+
+    Args:
+        answer: Rückgabe von :meth:`QMessageBox.question` - je nach Qt-Fassung
+            ein Enum-Mitglied oder eine Zahl.
+        button: Die erwartete Schaltfläche; voreingestellt "Ja".
+
+    Returns:
+        ``True``, wenn der Anwender genau diese Schaltfläche angeklickt hat.
+    """
+    return int(answer) == int(button)

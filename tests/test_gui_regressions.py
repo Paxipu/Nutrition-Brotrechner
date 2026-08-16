@@ -104,3 +104,128 @@ class TestCalendarStyling:
         assert view.columnWidth(1) >= needed, (
             f"Spalte {view.columnWidth(1)} px, benötigt {needed} px"
         )
+
+
+class TestConfirmationDialogs:
+    """Bestätigungsdialoge blieben wirkungslos: Ja tat dasselbe wie Nein.
+
+    PySide6 reicht die geklickte Schaltfläche von ``QMessageBox.question`` als
+    einfache Zahl zurück, nicht als Enum-Mitglied (nachgemessen mit 6.11:
+    ``type(antwort) is int``). Der Code verglich sie mit ``is`` gegen
+    ``StandardButton.Yes`` - und das ist bei zwei verschiedenen Objekten immer
+    falsch. Überschreiben, Löschen und alle anderen Rückfragen brachen deshalb
+    stumm ab; sichtbar war nur der Systemton des Dialogs.
+
+    Die Attrappen hier geben bewusst ``int`` zurück. Genau das taten die
+    früheren Tests nicht - sie lieferten das Enum-Mitglied und liefen deshalb
+    grün, während das Programm nicht funktionierte.
+    """
+
+    @staticmethod
+    def _install_dialogs(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+
+        ja = int(QMessageBox.StandardButton.Yes)
+        ok = int(QMessageBox.StandardButton.Ok)
+        for art in ("information", "warning", "critical"):
+            monkeypatch.setattr(QMessageBox, art, lambda *_a, **_k: ok)
+        monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: ja)
+        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: (name, True))
+        monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *_a, **_k: ("", True))
+
+    @pytest.fixture
+    def window(self, qapp: object, data_dir, monkeypatch: pytest.MonkeyPatch):
+        """Hauptfenster auf einem leeren, isolierten Datenverzeichnis."""
+        del qapp
+        self._install_dialogs(monkeypatch, "Testbrot")
+        from brotrechner.gui.main_window import MainWindow
+
+        widget = MainWindow(data_dir=data_dir)
+        yield widget
+        widget.close()
+
+    @staticmethod
+    def _stored(data_dir) -> dict[str, float]:
+        """Rezeptnamen und Gesamteinwaage - frisch von der Platte gelesen."""
+        from brotrechner.data.repository import load_ingredients, load_recipes
+
+        ingredients, _ = load_ingredients(data_dir / "ingredients.json")
+        recipes, _ = load_recipes(data_dir / "recipes.json", ingredients)
+        return {r.name: sum(i.amount_g for i in r.items) for r in recipes}
+
+    @staticmethod
+    def _fill(window: object, grams: float) -> None:
+        """Legt eine Zutat mit vorgegebener Menge in den Rechner."""
+        page = window.page_calculator  # type: ignore[attr-defined]
+        flour = next(i for i in window._ingredients if i.is_flour)  # type: ignore[attr-defined]
+        page.clear()
+        page._items_model.add_item(flour, grams)
+        page.spin_baked.setValue(grams * 0.8)
+        page._recalculate()
+
+    def test_overwriting_actually_replaces_the_stored_recipe(
+        self, window: object, data_dir
+    ) -> None:
+        """Der gemeldete Fehler: Nachfrage kommt, alte Werte bleiben stehen."""
+        self._fill(window, 1000.0)
+        window.btn_save_recipe.click()  # type: ignore[attr-defined]
+        assert self._stored(data_dir)["Testbrot"] == pytest.approx(1000.0)
+
+        self._fill(window, 2500.0)
+        window.btn_save_recipe.click()  # type: ignore[attr-defined]
+        assert self._stored(data_dir)["Testbrot"] == pytest.approx(2500.0)
+
+    def test_deleting_actually_removes_the_recipe(self, window: object, data_dir) -> None:
+        """Der zweite gemeldete Fehler: Löschen ohne Wirkung."""
+        self._fill(window, 1000.0)
+        window.btn_save_recipe.click()  # type: ignore[attr-defined]
+        assert "Testbrot" in self._stored(data_dir)
+
+        window._on_delete_recipe("Testbrot")  # type: ignore[attr-defined]
+        assert "Testbrot" not in self._stored(data_dir)
+
+    def test_qt_returns_a_plain_number_for_the_clicked_button(self, qapp: object) -> None:
+        """Hält die Ursache fest - schlägt an, falls PySide6 das je ändert."""
+        del qapp
+        from PySide6.QtCore import QTimer
+        from PySide6.QtWidgets import QApplication, QMessageBox
+
+        def klick() -> None:
+            dialog = QApplication.activeModalWidget()
+            if isinstance(dialog, QMessageBox):
+                dialog.button(QMessageBox.StandardButton.Yes).click()
+
+        QTimer.singleShot(0, klick)
+        answer = QMessageBox.question(
+            None,
+            "Test",
+            "Ja?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        assert answer == QMessageBox.StandardButton.Yes, "Gleichheit muss gelten"
+        assert answer is not QMessageBox.StandardButton.Yes, (
+            "Identität gilt nicht - deshalb ist 'is' hier verboten"
+        )
+
+
+def test_no_identity_comparison_against_qt_enums() -> None:
+    """Wache gegen den ganzen Fehlertyp, nicht nur gegen die vier Fundstellen.
+
+    Qt reicht Enum-Werte je nach Version mal als Mitglied, mal als blanke Zahl
+    heraus - die Rolle in ``headerData`` ist schon heute ein ``int``. Ein
+    Identitätsvergleich ist deshalb an keiner Qt-Grenze zulässig; ``==``
+    funktioniert in beiden Fällen.
+    """
+    import re
+    from pathlib import Path
+
+    quelle = Path(__file__).resolve().parents[1] / "src" / "brotrechner"
+    muster = re.compile(r"\bis\s+(?:not\s+)?Q[A-Za-z]+\.")
+    treffer = [
+        f"{datei.relative_to(quelle)}:{nr}: {zeile.strip()}"
+        for datei in sorted(quelle.rglob("*.py"))
+        for nr, zeile in enumerate(datei.read_text(encoding="utf-8").splitlines(), 1)
+        if muster.search(zeile)
+    ]
+    assert not treffer, "Identitätsvergleich gegen Qt-Enum:\n" + "\n".join(treffer)

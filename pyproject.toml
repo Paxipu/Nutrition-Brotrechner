@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brotrechner"
-version = "5.0.2"
+version = "5.0.3"
 description = "Nutrition, cost and baker's percentage calculator for home-baked bread (EU 1169/2011 compliant labels)"
 readme = "README.md"
 requires-python = ">=3.10"

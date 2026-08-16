@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 from brotrechner.core.models import Category, Ingredient, Source
 from brotrechner.core.nutrients import Nutrients, energy_from_macros
 from brotrechner.core.validation import Severity, validate_ingredient
+from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card
 from brotrechner.i18n import NUTRIENT_LABELS, format_number
@@ -424,7 +425,7 @@ class IngredientDialog(QDialog):
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel,
             )
-            if answer is not QMessageBox.StandardButton.Save:
+            if not confirmed(answer, QMessageBox.StandardButton.Save):
                 return
 
         self.accept()
