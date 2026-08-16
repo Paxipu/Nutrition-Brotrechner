@@ -131,6 +131,45 @@ class LabelOptions:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _Metrics:
+    """Alle Maße des Etiketts in Pixeln, abgeleitet aus einem Stauchungsfaktor.
+
+    Sämtliche Größen sind in Millimetern gedacht und werden über die Auflösung
+    in Pixel umgerechnet. ``factor`` staucht die gesamte Typografie gleichmäßig,
+    wenn der Inhalt sonst nicht auf das Etikett passt - ein Aufkleber von
+    54 × 86 mm trägt nun einmal weniger als einer von 90 × 130 mm.
+    """
+
+    pixels_per_mm: float
+    factor: float
+
+    def mm(self, value: float) -> int:
+        """Millimeter in Pixel, ohne Stauchung - für Ränder und Linienstärken."""
+        return max(1, round(value * self.pixels_per_mm))
+
+    def scaled(self, value: float) -> int:
+        """Millimeter in Pixel, mit Stauchung - für Schrift und Zeilenabstände."""
+        return max(1, round(value * self.factor * self.pixels_per_mm))
+
+
+#: Stufen, in denen die Typografie verkleinert wird, bis der Inhalt passt.
+#: Unter 0,62 wäre ein Etikett nicht mehr zuverlässig lesbar; dann kürzt
+#: stattdessen das Zutatenverzeichnis.
+_SCALE_STEPS: Final[tuple[float, ...]] = (1.0, 0.94, 0.88, 0.82, 0.76, 0.70, 0.66, 0.62)
+
+#: Bis zu dieser Stufe wird herunterskaliert, um das *vollständige*
+#: Zutatenverzeichnis unterzubringen. Darunter wäre der Preis zu hoch: Ein
+#: winziges Etikett, nur damit die letzte Zutat noch hineinpasst, nutzt
+#: niemandem. Dann wird lieber die Liste gekürzt.
+_FULL_LIST_MIN_FACTOR: Final = 0.76
+
+#: Fußnote nach Anhang XIII der VO (EU) Nr. 1169/2011.
+_REFERENCE_HINT: Final = (
+    "Referenzmenge für einen durchschnittlichen Erwachsenen (8400 kJ / 2000 kcal)"
+)
+
+
 def single_line(text: str) -> str:
     """Macht aus beliebigem Text eine einzeilige, zeichenbare Zeichenkette.
 
@@ -144,6 +183,23 @@ def single_line(text: str) -> str:
     return " ".join(cleaned.split())
 
 
+def date_lines(options: LabelOptions) -> list[str]:
+    """Datumsangaben, je eine eigene Zeile.
+
+    Backdatum und Mindesthaltbarkeit standen früher nebeneinander in einer
+    Zeile. Zusammen wurde die so lang, dass sie über beide Ränder hinauslief.
+    Zwei Zeilen sind auch inhaltlich richtiger - es sind zwei verschiedene
+    Angaben, und die Mindesthaltbarkeit ist die rechtlich geregelte.
+    """
+    lines: list[str] = []
+    if options.show_date:
+        baked = options.baked_on or date.today()
+        lines.append(f"gebacken am {baked.strftime('%d.%m.%Y')}")
+    if options.best_before:
+        lines.append(f"mindestens haltbar bis {options.best_before.strftime('%d.%m.%Y')}")
+    return lines
+
+
 def render_label(
     nutrients: Nutrients,
     options: LabelOptions,
@@ -151,6 +207,15 @@ def render_label(
     fonts: FontSet | None = None,
 ) -> Image.Image:
     """Zeichnet das Etikett.
+
+    Der Aufbau wird zuerst *gemessen* und erst dann gezeichnet: Für jede Stufe
+    aus :data:`_SCALE_STEPS` wird geprüft, ob Kopf, Nährwerttabelle,
+    Nettogewicht, mindestens eine Zeile Zutatenverzeichnis und die Fußzeile
+    zusammen auf das Etikett passen. Gezeichnet wird mit der größten Stufe, die
+    noch passt.
+
+    Vorher standen feste Abstände im Code, abgestimmt auf ein einziges Format.
+    Auf dem kleinen Aufkleber schoben sich die Blöcke dadurch übereinander.
 
     Args:
         nutrients: Nährwerte je 100 g fertiges Brot.
@@ -171,241 +236,395 @@ def render_label(
     fonts = fonts or load_font_set()
     palette = options.theme.colors
     width, height = options.pixel_size()
-    scale = options.dpi / 25.4  # Pixel je Millimeter
-
-    def mm(value: float) -> int:
-        """Millimeter in Pixel."""
-        return max(1, round(value * scale))
 
     image = Image.new("RGB", (width, height), palette.background)
     draw = ImageDraw.Draw(image)
 
-    # Typografische Skala, in Millimetern gedacht und damit auflösungsunabhängig.
-    f_section = fonts.get(mm(2.9), bold=True)
-    f_body = fonts.get(mm(2.7))
-    f_body_bold = fonts.get(mm(2.7), bold=True)
-    f_small = fonts.get(mm(2.1))
-    f_weight = fonts.get(mm(3.6), bold=True)
-
-    margin = mm(5.0)
-    inner_left = margin + mm(2.0)
-    inner_right = width - margin - mm(2.0)
+    metrics = _fitting_metrics(draw, nutrients, options, fonts, options.dpi / 25.4, width, height)
+    margin = metrics.mm(5.0)
+    left = margin + metrics.mm(2.0)
+    right = width - margin - metrics.mm(2.0)
 
     # Dünner Rahmen: gibt dem Etikett eine Kante zum Ausschneiden.
     draw.rectangle(
         [margin // 2, margin // 2, width - margin // 2, height - margin // 2],
         outline=palette.rule,
-        width=max(1, mm(0.3)),
+        width=max(1, metrics.mm(0.3)),
     )
 
-    y = _draw_header(
+    y = _draw_head(
         draw,
         options,
         palette,
         fonts,
-        left=inner_left,
-        right=inner_right,
-        top=margin + mm(2.0),
-        mm=mm,
+        metrics,
+        left=left,
+        right=right,
+        top=margin + metrics.mm(2.0),
+    )
+    y = _draw_nutrition(
+        draw, nutrients, options, palette, fonts, metrics, left=left, right=right, top=y
+    )
+    y = _draw_net_weight(draw, options, palette, fonts, metrics, left=left, right=right, top=y)
+
+    footer_top = _draw_footer(
+        draw,
+        options,
+        palette,
+        fonts,
+        metrics,
+        left=left,
+        right=right,
+        bottom=height - margin - metrics.mm(2.0),
     )
 
-    # ── Nährwerttabelle ───────────────────────────────────────────────────
-    draw.text((inner_left, y), "Nährwerte je 100 g", fill=palette.accent, font=f_section)
-    y += mm(4.6)
-
-    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
-    panel_top = y - mm(1.2)
-    panel_height = len(rows) * mm(4.2) + mm(2.4)
-    draw.rectangle(
-        [inner_left - mm(1.5), panel_top, inner_right + mm(1.5), panel_top + panel_height],
-        fill=palette.panel,
-    )
-
-    for label, value, indented, emphasised in rows:
-        font = f_body_bold if emphasised else f_body
-        colour = palette.text if not indented else palette.muted
-        draw.text((inner_left + (mm(3.0) if indented else 0), y), label, fill=colour, font=font)
-        draw.text((inner_right, y), value, fill=colour, font=font, anchor="rt")
-        y += mm(4.2)
-
-    y += mm(3.0)
-
-    # ── Nettogewicht ──────────────────────────────────────────────────────
-    if options.net_weight_g > 0:
-        draw.line([(inner_left, y), (inner_right, y)], fill=palette.rule, width=max(1, mm(0.25)))
-        y += mm(2.8)
-        draw.text(
-            ((inner_left + inner_right) // 2, y),
-            f"Nettogewicht {_format_weight(options.net_weight_g)}",
-            fill=palette.accent,
-            font=f_weight,
-            anchor="mt",
-        )
-        y += mm(6.0)
-
-    # ── Fuß zuerst festlegen, damit die Zutatenliste ihren Platz kennt ───
-    footer_y = height - margin - mm(3.0)
-    footer_top = footer_y - (mm(4.0) if options.show_reference_hint else 0) - mm(3.0)
-
-    # ── Zutatenverzeichnis ────────────────────────────────────────────────
     if options.show_ingredients and options.ingredients:
-        draw.text((inner_left, y), "Zutaten", fill=palette.accent, font=f_section)
-        y += mm(4.0)
-        _draw_ingredient_list(
+        _draw_ingredients(
             draw,
-            single_line(", ".join(options.ingredients)),
-            fonts=fonts,
-            colour=palette.muted,
-            left=inner_left,
-            right=inner_right,
+            options,
+            palette,
+            fonts,
+            metrics,
+            left=left,
+            right=right,
             top=y,
             bottom=footer_top,
-            mm=mm,
-        )
-
-    # ── Fuß ───────────────────────────────────────────────────────────────
-    if options.show_reference_hint:
-        hint_font = fonts.get(mm(1.7))
-        hint = "Referenzmenge für einen durchschnittlichen Erwachsenen (8400 kJ / 2000 kcal)"
-        hint_lines = _wrap(draw, hint, hint_font, inner_right - inner_left)
-        hint_y = footer_y - mm(4.0) - (len(hint_lines) - 1) * mm(2.4)
-        for line in hint_lines:
-            draw.text(
-                ((inner_left + inner_right) // 2, hint_y),
-                line,
-                fill=palette.muted,
-                font=hint_font,
-                anchor="mb",
-            )
-            hint_y += mm(2.4)
-    if single_line(options.footer):
-        draw.text(
-            ((inner_left + inner_right) // 2, footer_y),
-            single_line(options.footer),
-            fill=palette.muted,
-            font=f_small,
-            anchor="mb",
         )
 
     return image
 
 
-def _draw_ingredient_list(
+def _fitting_metrics(
     draw: ImageDraw.ImageDraw,
-    text: str,
-    *,
+    nutrients: Nutrients,
+    options: LabelOptions,
     fonts: FontSet,
-    colour: str,
+    pixels_per_mm: float,
+    width: int,
+    height: int,
+) -> _Metrics:
+    """Größte Typografiestufe, mit der alles auf das Etikett passt.
+
+    In zwei Durchgängen: Zuerst wird versucht, das **vollständige**
+    Zutatenverzeichnis unterzubringen - es ist die gesetzlich vorgeschriebene
+    Angabe und wiegt schwerer als ein Millimeter Schriftgröße. Gelingt das bis
+    :data:`_FULL_LIST_MIN_FACTOR` nicht, entscheidet der zweite Durchgang nur
+    noch über den festen Teil, und die Liste kürzt sich selbst.
+    """
+    for factor in _SCALE_STEPS:
+        if factor < _FULL_LIST_MIN_FACTOR:
+            break
+        metrics = _Metrics(pixels_per_mm, factor)
+        needed = _required_height(
+            draw, nutrients, options, fonts, metrics, width, full_ingredients=True
+        )
+        if needed <= height:
+            return metrics
+
+    for factor in _SCALE_STEPS:
+        metrics = _Metrics(pixels_per_mm, factor)
+        if _required_height(draw, nutrients, options, fonts, metrics, width) <= height:
+            return metrics
+    return _Metrics(pixels_per_mm, _SCALE_STEPS[-1])
+
+
+def _required_height(
+    draw: ImageDraw.ImageDraw,
+    nutrients: Nutrients,
+    options: LabelOptions,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+    *,
+    full_ingredients: bool = False,
+) -> int:
+    """Platzbedarf bei der gegebenen Stufe.
+
+    Args:
+        full_ingredients: Rechnet das Zutatenverzeichnis mit allen Zeilen ein.
+            Sonst wird nur *eine* Zeile veranschlagt - die Liste darf sich
+            kürzen, alles andere nicht.
+    """
+    inner_width = width - 2 * (m.mm(5.0) + m.mm(2.0))
+    total = 2 * (m.mm(5.0) + m.mm(2.0))
+
+    title = _wrap(draw, single_line(options.title), _font_title(fonts, m), inner_width)
+    total += max(1, len(title)) * m.scaled(5.6)
+
+    subtitle = single_line(options.subtitle)
+    if subtitle:
+        lines = _wrap(draw, subtitle, _font_subtitle(fonts, m), inner_width)
+        total += m.scaled(0.6) + len(lines) * m.scaled(3.4)
+
+    dates = date_lines(options)
+    if dates:
+        total += m.scaled(0.8) + len(dates) * m.scaled(3.4)
+
+    total += m.scaled(1.6) + m.scaled(3.4)  # Trennlinie mit Abstand
+
+    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
+    total += m.scaled(4.6) + len(rows) * m.scaled(4.2) + m.scaled(3.0)
+
+    if options.net_weight_g > 0:
+        total += m.scaled(2.8) + m.scaled(6.0)
+
+    if options.show_ingredients and options.ingredients:
+        total += m.scaled(4.0)  # Überschrift
+        if full_ingredients:
+            text = single_line(", ".join(options.ingredients))
+            lines = _wrap(draw, text, _font_small(fonts, m), inner_width)
+            total += len(lines) * m.scaled(3.0)
+        else:
+            total += m.scaled(3.0)  # mindestens eine Zeile
+
+    return total + _footer_height(draw, options, fonts, m, inner_width)
+
+
+def _footer_height(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    fonts: FontSet,
+    m: _Metrics,
+    inner_width: int,
+) -> int:
+    """Höhe von Referenzhinweis und Fußzeile."""
+    height = m.scaled(2.0)
+    if options.show_reference_hint:
+        lines = _wrap(draw, _REFERENCE_HINT, _font_hint(fonts, m), inner_width)
+        height += len(lines) * m.scaled(2.4)
+    if single_line(options.footer):
+        height += m.scaled(3.4)
+    return height
+
+
+# ── Schriftgrößen ──────────────────────────────────────────────────────────
+
+
+def _font_title(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(4.6), bold=True)
+
+
+def _font_subtitle(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(2.6))
+
+
+def _font_section(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(2.9), bold=True)
+
+
+def _font_body(fonts: FontSet, m: _Metrics, *, bold: bool = False) -> Font:
+    return fonts.get(m.scaled(2.7), bold=bold)
+
+
+def _font_small(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(2.1))
+
+
+def _font_weight(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(3.6), bold=True)
+
+
+def _font_hint(fonts: FontSet, m: _Metrics) -> Font:
+    return fonts.get(m.scaled(1.7))
+
+
+# ── Einzelne Blöcke ────────────────────────────────────────────────────────
+
+
+def _draw_head(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    *,
+    left: int,
+    right: int,
+    top: int,
+) -> int:
+    """Titel, Untertitel, Datumszeilen und Trennlinie."""
+    y = _draw_wrapped_centered(
+        draw,
+        single_line(options.title),
+        font=_font_title(fonts, m),
+        colour=palette.accent,
+        left=left,
+        right=right,
+        top=top,
+        line_height=m.scaled(5.6),
+    )
+
+    subtitle = single_line(options.subtitle)
+    if subtitle:
+        y = _draw_wrapped_centered(
+            draw,
+            subtitle,
+            font=_font_subtitle(fonts, m),
+            colour=palette.muted,
+            left=left,
+            right=right,
+            top=y + m.scaled(0.6),
+            line_height=m.scaled(3.4),
+        )
+
+    dates = date_lines(options)
+    if dates:
+        y += m.scaled(0.8)
+        font = _font_small(fonts, m)
+        centre = (left + right) // 2
+        for line in dates:
+            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mt")
+            y += m.scaled(3.4)
+
+    y += m.scaled(1.6)
+    draw.line([(left, y), (right, y)], fill=palette.accent, width=max(1, m.mm(0.5)))
+    return y + m.scaled(3.4)
+
+
+def _draw_nutrition(
+    draw: ImageDraw.ImageDraw,
+    nutrients: Nutrients,
+    options: LabelOptions,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    *,
+    left: int,
+    right: int,
+    top: int,
+) -> int:
+    """Überschrift und Nährwerttabelle."""
+    draw.text((left, top), "Nährwerte je 100 g", fill=palette.accent, font=_font_section(fonts, m))
+    y = top + m.scaled(4.6)
+
+    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
+    row_height = m.scaled(4.2)
+    panel_top = y - m.scaled(1.2)
+    draw.rectangle(
+        [
+            left - m.mm(1.5),
+            panel_top,
+            right + m.mm(1.5),
+            panel_top + len(rows) * row_height + m.scaled(2.4),
+        ],
+        fill=palette.panel,
+    )
+
+    body = _font_body(fonts, m)
+    body_bold = _font_body(fonts, m, bold=True)
+    for label, value, indented, emphasised in rows:
+        font = body_bold if emphasised else body
+        colour = palette.muted if indented else palette.text
+        draw.text((left + (m.scaled(3.0) if indented else 0), y), label, fill=colour, font=font)
+        draw.text((right, y), value, fill=colour, font=font, anchor="rt")
+        y += row_height
+
+    return y + m.scaled(3.0)
+
+
+def _draw_net_weight(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    *,
+    left: int,
+    right: int,
+    top: int,
+) -> int:
+    """Trennlinie und Nettogewicht."""
+    if options.net_weight_g <= 0:
+        return top
+    draw.line([(left, top), (right, top)], fill=palette.rule, width=max(1, m.mm(0.25)))
+    y = top + m.scaled(2.8)
+    draw.text(
+        ((left + right) // 2, y),
+        f"Nettogewicht {_format_weight(options.net_weight_g)}",
+        fill=palette.accent,
+        font=_font_weight(fonts, m),
+        anchor="mt",
+    )
+    return y + m.scaled(6.0)
+
+
+def _draw_footer(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    *,
+    left: int,
+    right: int,
+    bottom: int,
+) -> int:
+    """Zeichnet die Fußzeile von unten nach oben.
+
+    Returns:
+        Das ``y``, an dem der Fuß beginnt - die Untergrenze für alles darüber.
+    """
+    centre = (left + right) // 2
+    y = bottom
+
+    footer = single_line(options.footer)
+    if footer:
+        draw.text((centre, y), footer, fill=palette.muted, font=_font_small(fonts, m), anchor="mb")
+        y -= m.scaled(3.4)
+
+    if options.show_reference_hint:
+        font = _font_hint(fonts, m)
+        for line in reversed(_wrap(draw, _REFERENCE_HINT, font, right - left)):
+            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mb")
+            y -= m.scaled(2.4)
+
+    return y - m.scaled(2.0)
+
+
+def _draw_ingredients(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    *,
     left: int,
     right: int,
     top: int,
     bottom: int,
-    mm: Callable[[float], int],
 ) -> None:
-    """Setzt das Zutatenverzeichnis in den verbleibenden Platz.
+    """Überschrift und Zutatenverzeichnis im verbleibenden Platz.
 
-    Ein Brot mit zwölf Zutaten hat ein deutlich längeres Verzeichnis als eines
-    mit dreien. Statt über die Fußzeile zu laufen, wird die Schrift in Stufen
-    verkleinert und - wenn selbst das nicht reicht - der Rest mit einem
-    Auslassungszeichen abgeschnitten. Das Etikett bleibt dadurch immer lesbar
-    und formatstabil.
-
-    Args:
-        draw: Zeichenkontext.
-        text: Zutaten als Fließtext, bereits nach Anteil sortiert.
-        fonts: Schriftsatz.
-        colour: Textfarbe.
-        left: Linke Kante.
-        right: Rechte Kante.
-        top: Oberkante des verfügbaren Bereichs.
-        bottom: Unterkante, die nicht überschritten werden darf.
-        mm: Umrechnung Millimeter → Pixel.
+    Reicht der Platz nicht, wird die Schrift stufenweise verkleinert und
+    zuletzt gekürzt: Ein Brot mit zwölf Zutaten hat ein deutlich längeres
+    Verzeichnis als eines mit dreien.
     """
-    available = bottom - top
+    draw.text((left, top), "Zutaten", fill=palette.accent, font=_font_section(fonts, m))
+    y = top + m.scaled(4.0)
+    available = bottom - y
     if available <= 0:
         return
 
-    for size_mm, line_mm in ((2.1, 3.0), (1.9, 2.7), (1.7, 2.4), (1.5, 2.1)):
-        font = fonts.get(mm(size_mm))
-        line_height = mm(line_mm)
+    text = single_line(", ".join(options.ingredients))
+    font = _font_small(fonts, m)
+    line_height = m.scaled(3.0)
+    lines = _wrap(draw, text, font, right - left)
+
+    for size_mm, gap_mm in ((2.1, 3.0), (1.9, 2.7), (1.7, 2.4), (1.5, 2.1)):
+        font = fonts.get(m.scaled(size_mm))
+        line_height = m.scaled(gap_mm)
         lines = _wrap(draw, text, font, right - left)
         if len(lines) * line_height <= available:
             break
-    else:  # kleinste Stufe reicht nicht - abschneiden
+    else:
         max_lines = max(1, available // line_height)
         if len(lines) > max_lines:
             lines = lines[:max_lines]
             lines[-1] = lines[-1].rstrip(", ") + " …"
 
     for line in lines:
-        draw.text((left, top), line, fill=colour, font=font)
-        top += line_height
-
-
-def _draw_header(
-    draw: ImageDraw.ImageDraw,
-    options: LabelOptions,
-    palette: _Palette,
-    fonts: FontSet,
-    *,
-    left: int,
-    right: int,
-    top: int,
-    mm: Callable[[float], int],
-) -> int:
-    """Zeichnet Titel, Untertitel, Datumszeile und Trennlinie.
-
-    Returns:
-        Das ``y`` unterhalb der Trennlinie.
-    """
-    y = _draw_wrapped_centered(
-        draw,
-        single_line(options.title),
-        font=fonts.get(mm(4.6), bold=True),
-        colour=palette.accent,
-        left=left,
-        right=right,
-        top=top,
-        line_height=mm(5.6),
-    )
-    if single_line(options.subtitle):
-        y = _draw_wrapped_centered(
-            draw,
-            single_line(options.subtitle),
-            font=fonts.get(mm(2.6)),
-            colour=palette.muted,
-            left=left,
-            right=right,
-            top=y + mm(0.6),
-            line_height=mm(3.4),
-        )
-
-    date_line = _date_line(options)
-    if date_line:
-        y += mm(0.8)
-        draw.text(
-            ((left + right) // 2, y),
-            date_line,
-            fill=palette.muted,
-            font=fonts.get(mm(2.1)),
-            anchor="mt",
-        )
-        y += mm(3.4)
-
-    y += mm(1.6)
-    draw.line([(left, y), (right, y)], fill=palette.accent, width=max(1, mm(0.5)))
-    return y + mm(3.4)
-
-
-def _date_line(options: LabelOptions) -> str:
-    """Baut die Datumszeile aus Backdatum und Mindesthaltbarkeit."""
-    parts: list[str] = []
-    if options.show_date:
-        baked = options.baked_on or date.today()
-        parts.append(f"gebacken am {baked.strftime('%d.%m.%Y')}")
-    if options.best_before:
-        parts.append(f"mindestens haltbar bis {options.best_before.strftime('%d.%m.%Y')}")
-    return "  ·  ".join(parts)
+        draw.text((left, y), line, fill=palette.muted, font=font)
+        y += line_height
 
 
 def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str, str, bool, bool]]:

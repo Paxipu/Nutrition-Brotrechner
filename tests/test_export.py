@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -15,12 +16,33 @@ from brotrechner.core.models import Ingredient
 from brotrechner.core.nutrients import Nutrients
 from brotrechner.export import report
 from brotrechner.export.fonts import load_font_set
-from brotrechner.export.label import LabelOptions, LabelSize, LabelTheme, render_label
+from brotrechner.export.label import (
+    LabelOptions,
+    LabelSize,
+    LabelTheme,
+    date_lines,
+    render_label,
+)
 from brotrechner.export.table import (
     INGREDIENT_COLUMNS,
     write_analysis_csv,
     write_ingredients_csv,
 )
+
+#: Ein Brot mit vielen Zutaten - der Fall, an dem sich der Aufbau bewähren muss.
+LONG_INGREDIENTS = [
+    "Wasser",
+    "Dinkelvollkornmehl",
+    "Weizenvollkornmehl",
+    "Roggenvollkornmehl",
+    "Dinkelmehl Type 630",
+    "Grünkern fränkisch",
+    "Hafer (ganz)",
+    "Haferkleie",
+    "Gluten rein",
+    "Salz",
+    "Dinkel (ganz)",
+]
 
 BREAD = Nutrients(
     energy_kcal=209,
@@ -126,6 +148,151 @@ class TestLabelRendering:
         )
         image = render_label(BREAD, options, fonts=FONTS)
         assert image.size == options.pixel_size()
+
+
+class TestLabelLayout:
+    """Der Aufbau wird gemessen, bevor gezeichnet wird.
+
+    Früher standen feste Millimeterabstände im Code, abgestimmt auf ein
+    einziges Format. Auf dem kleinen Aufkleber schoben sich die Blöcke dadurch
+    übereinander, und Backdatum samt Mindesthaltbarkeit liefen als eine einzige
+    Zeile über beide Ränder hinaus.
+    """
+
+    @staticmethod
+    def _block_bounds(options: LabelOptions) -> tuple[int, int]:
+        """Unterkante des festen Teils und Oberkante der Fußzeile.
+
+        Beide werden mit denselben Funktionen ermittelt, die auch zeichnen -
+        eine getrennte Nachrechnung könnte auseinanderlaufen.
+        """
+        from PIL import ImageDraw
+
+        from brotrechner.export import label as module
+
+        width, height = options.pixel_size()
+        canvas = Image.new("RGB", (width, height))
+        draw = ImageDraw.Draw(canvas)
+        metrics = module._fitting_metrics(
+            draw, BREAD, options, FONTS, options.dpi / 25.4, width, height
+        )
+        margin = metrics.mm(5.0)
+        left = margin + metrics.mm(2.0)
+        right = width - margin - metrics.mm(2.0)
+        palette = options.theme.colors
+
+        y = module._draw_head(
+            draw,
+            options,
+            palette,
+            FONTS,
+            metrics,
+            left=left,
+            right=right,
+            top=margin + metrics.mm(2.0),
+        )
+        y = module._draw_nutrition(
+            draw, BREAD, options, palette, FONTS, metrics, left=left, right=right, top=y
+        )
+        y = module._draw_net_weight(
+            draw, options, palette, FONTS, metrics, left=left, right=right, top=y
+        )
+        footer_top = module._draw_footer(
+            draw,
+            options,
+            palette,
+            FONTS,
+            metrics,
+            left=left,
+            right=right,
+            bottom=height - margin - metrics.mm(2.0),
+        )
+        return y, footer_top
+
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_content_never_reaches_into_the_footer(self, size: LabelSize) -> None:
+        """Auf keinem Format darf sich der feste Teil mit der Fußzeile überlagern."""
+        options = LabelOptions(
+            title="Roggenmischbrot",
+            size=size,
+            dpi=150,
+            net_weight_g=2964,
+            ingredients=LONG_INGREDIENTS,
+            best_before=date(2026, 8, 23),
+            baked_on=date(2026, 8, 16),
+        )
+        content_bottom, footer_top = self._block_bounds(options)
+        assert content_bottom <= footer_top, (
+            f"{size.value}: Inhalt endet bei {content_bottom} px, Fuß beginnt bei {footer_top} px"
+        )
+
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_long_title_still_fits(self, size: LabelSize) -> None:
+        options = LabelOptions(
+            title="Dreikorn-Vollkornbrot mit Saaten und Sauerteig nach alter Art",
+            subtitle="Handgeformt, 48 Stunden Führung",
+            size=size,
+            dpi=150,
+            net_weight_g=2964,
+            ingredients=LONG_INGREDIENTS,
+            best_before=date(2026, 8, 23),
+        )
+        content_bottom, footer_top = self._block_bounds(options)
+        assert content_bottom <= footer_top
+
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_forty_ingredients_do_not_break_the_layout(self, size: LabelSize) -> None:
+        options = LabelOptions(
+            title="Vielkornbrot",
+            size=size,
+            dpi=150,
+            net_weight_g=2964,
+            ingredients=[f"Zutat Nummer {i}" for i in range(40)],
+            best_before=date(2026, 8, 23),
+        )
+        content_bottom, footer_top = self._block_bounds(options)
+        assert content_bottom <= footer_top
+
+    def test_the_medium_label_keeps_the_whole_ingredient_list(self) -> None:
+        """Das Zutatenverzeichnis ist vorgeschrieben und wiegt schwerer als Schriftgröße."""
+        from PIL import ImageDraw
+
+        from brotrechner.export import label as module
+
+        options = LabelOptions(
+            title="Roggenmischbrot",
+            size=LabelSize.MEDIUM,
+            dpi=150,
+            net_weight_g=2964,
+            ingredients=LONG_INGREDIENTS,
+            best_before=date(2026, 8, 23),
+        )
+        width, height = options.pixel_size()
+        draw = ImageDraw.Draw(Image.new("RGB", (width, height)))
+        metrics = module._fitting_metrics(
+            draw, BREAD, options, FONTS, options.dpi / 25.4, width, height
+        )
+        needed = module._required_height(
+            draw, BREAD, options, FONTS, metrics, width, full_ingredients=True
+        )
+        assert needed <= height
+
+
+class TestDateLines:
+    def test_both_dates_get_their_own_line(self) -> None:
+        """Zusammen in einer Zeile liefen sie über beide Ränder hinaus."""
+        lines = date_lines(LabelOptions(baked_on=date(2026, 8, 16), best_before=date(2026, 8, 23)))
+        assert lines == ["gebacken am 16.08.2026", "mindestens haltbar bis 23.08.2026"]
+
+    def test_only_the_baking_date(self) -> None:
+        assert date_lines(LabelOptions(baked_on=date(2026, 8, 16))) == ["gebacken am 16.08.2026"]
+
+    def test_only_the_best_before_date(self) -> None:
+        lines = date_lines(LabelOptions(show_date=False, best_before=date(2026, 8, 23)))
+        assert lines == ["mindestens haltbar bis 23.08.2026"]
+
+    def test_no_dates_at_all(self) -> None:
+        assert date_lines(LabelOptions(show_date=False)) == []
 
 
 class TestIngredientCsv:

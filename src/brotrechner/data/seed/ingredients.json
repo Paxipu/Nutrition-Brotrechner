@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "generator": "tools/build_seed_database.py (brotrechner 5.0.1)",
+  "generator": "tools/build_seed_database.py (brotrechner 5.0.2)",
   "price_date": "2026-08-16",
   "ingredients": [
     {

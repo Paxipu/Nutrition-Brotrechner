@@ -3,6 +3,23 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [5.0.2] – 2026-08-16
+
+### Behoben
+
+- **Das Etikett wird jetzt gemessen, bevor es gezeichnet wird.** Bisher standen
+  feste Millimeterabstände im Code, abgestimmt auf ein einziges Format. Auf dem
+  kleinen Aufkleber (54 × 86 mm) schoben sich dadurch Nettogewicht, Fußnote und
+  Zutatenüberschrift übereinander, und das Verzeichnis fehlte ganz - das Format
+  war unbenutzbar. Der Aufbau ermittelt nun für jede Typografiestufe den
+  Platzbedarf und zeichnet mit der größten, die passt.
+- **Backdatum und Mindesthaltbarkeit stehen auf getrennten Zeilen.** Zusammen
+  in einer Zeile liefen sie auf jedem Format über beide Ränder hinaus. Zwei
+  Zeilen sind auch inhaltlich richtiger - es sind zwei verschiedene Angaben.
+- Das **vollständige Zutatenverzeichnis hat Vorrang vor der Schriftgröße**.
+  Passt es nicht, wird zuerst die Typografie eine Stufe kleiner gewählt und
+  erst danach gekürzt. Es ist die gesetzlich vorgeschriebene Angabe.
+
 ## [5.0.1] – 2026-08-16
 
 ### Behoben
