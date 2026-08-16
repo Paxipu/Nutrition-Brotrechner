@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSize
-from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
+from PySide6.QtGui import QAction, QCloseEvent, QGuiApplication, QKeySequence, QScreen
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -364,14 +364,47 @@ class MainWindow(QMainWindow):
         self._rail.setStyleSheet(f"background: {self._tokens.sidebar};")
 
     def _restore_geometry(self) -> None:
-        if not self._settings.window_geometry:
-            return
-        try:
-            self.restoreGeometry(
-                QByteArray.fromBase64(self._settings.window_geometry.encode("ascii"))
-            )
-        except (ValueError, UnicodeEncodeError):  # pragma: no cover - defekte Einstellung
-            log.info("Gespeicherte Fenstergeometrie war unlesbar")
+        """Stellt die letzte Fenstergröße wieder her, sonst eine sinnvolle Startgröße."""
+        if self._settings.window_geometry:
+            try:
+                self.restoreGeometry(
+                    QByteArray.fromBase64(self._settings.window_geometry.encode("ascii"))
+                )
+            except (ValueError, UnicodeEncodeError):  # pragma: no cover - defekte Einstellung
+                log.info("Gespeicherte Fenstergeometrie war unlesbar")
+            else:
+                return
+
+        # Ohne gespeicherte Größe würde Qt das Fenster auf seiner Mindestgröße
+        # öffnen. Dort ist die Auswertungsspalte gerade eben angeschnitten -
+        # der erste Eindruck wäre also ein halb abgeschnittenes Programm.
+        self.resize(self._preferred_size())
+        self._center_on_screen()
+
+    def _preferred_size(self) -> QSize:
+        """Wunschgröße beim allerersten Start, begrenzt auf den Bildschirm.
+
+        Die 1440 x 920 sind so gewählt, dass Zutatenliste und Auswertung
+        nebeneinander vollständig sichtbar sind. Auf kleineren Anzeigen wird
+        auf 92 % der nutzbaren Fläche begrenzt, damit Taskleiste und
+        Fensterrahmen Platz behalten.
+        """
+        preferred = QSize(1440, 920)
+        available = self._screen().availableGeometry().size()
+        return QSize(
+            min(preferred.width(), int(available.width() * 0.92)),
+            min(preferred.height(), int(available.height() * 0.92)),
+        )
+
+    def _center_on_screen(self) -> None:
+        """Rückt das Fenster in die Mitte des verfügbaren Bildschirmbereichs."""
+        frame = self.frameGeometry()
+        frame.moveCenter(self._screen().availableGeometry().center())
+        self.move(frame.topLeft())
+
+    def _screen(self) -> QScreen:
+        """Bildschirm des Fensters, ersatzweise der primäre."""
+        return self.screen() or QGuiApplication.primaryScreen()
 
     # ── Rezeptaktionen ────────────────────────────────────────────────────
 

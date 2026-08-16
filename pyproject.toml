@@ -66,7 +66,7 @@ brotrechner-gui = "brotrechner.cli:main_gui"
 where = ["src"]
 
 [tool.setuptools.package-data]
-brotrechner = ["data/seed/*.json", "py.typed"]
+brotrechner = ["data/seed/*.json", "gui/icons/*", "py.typed"]
 
 # ── Tooling ────────────────────────────────────────────────────────────────
 
@@ -115,6 +115,10 @@ ignore = [
 # weil PLR0917 je nach ruff-Version stabil oder Vorschau ist - ein Kommentar
 # wäre in der einen Fassung nötig und in der anderen selbst ein Verstoß.
 "tools/build_seed_database.py" = ["PLR0917"]
+# Der Doppelklick-Starter importiert bewusst spät und breit: Er soll auch dann
+# noch eine lesbare Meldung zeigen, wenn eine Abhängigkeit fehlt - genau dann
+# wäre ein Import am Dateikopf schon gescheitert.
+"Brotrechner starten.pyw" = ["PLC0415", "BLE001"]
 
 [tool.ruff.lint.pylint]
 max-branches = 15

@@ -36,7 +36,38 @@ Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export.
 |---|---|
 | ![Zutaten](docs/bilder/zutaten.png) | ![Etikett](docs/bilder/etikett.png) |
 
-## Installation
+## Starten
+
+**Ohne Installation, per Doppelklick.** Im Hauptordner liegt die Datei
+**`Brotrechner starten.pyw`** – Doppelklick genügt. Die Endung `.pyw` ist unter
+Windows mit dem Python-Starter verknüpft, das Programm öffnet also ohne
+schwarzes Konsolenfenster. Voraussetzung ist lediglich ein Python ab 3.10 mit
+PySide6 und Pillow:
+
+```bash
+pip install PySide6 Pillow reportlab
+```
+
+Fehlt etwas davon, erscheint beim Start ein Hinweisfenster mit dem passenden
+Befehl – statt eines Fensters, das sich wortlos wieder schließt.
+
+Für eine Verknüpfung auf dem Schreibtisch (Windows, PowerShell):
+
+```powershell
+$root = "PFAD\ZU\Nutrition-Brotrechner"
+$ws = New-Object -ComObject WScript.Shell
+$sc = $ws.CreateShortcut("$([Environment]::GetFolderPath('Desktop'))\Brotrechner.lnk")
+$sc.TargetPath = (Get-Command pythonw).Source
+$sc.Arguments  = '"' + (Join-Path $root "Brotrechner starten.pyw") + '"'
+$sc.WorkingDirectory = $root
+$sc.IconLocation = (Join-Path $root "src\brotrechner\gui\icons\brotrechner.ico") + ",0"
+$sc.Save()
+```
+
+Unter Linux startet `python3 "Brotrechner starten.pyw"` oder – nach einer
+Installation – schlicht `brotrechner`.
+
+## Installation als Paket
 
 ```bash
 git clone https://github.com/Paxipu/Nutrition-Brotrechner.git
@@ -46,11 +77,11 @@ source .venv/bin/activate        # Windows:  .venv\Scripts\activate
 pip install -e ".[pdf]"
 ```
 
-Danach starten:
+Danach steht der Befehl systemweit bereit:
 
 ```bash
 brotrechner                      # Oberfläche
-python -m brotrechner            # dasselbe, ohne Installation eines Skripts
+python -m brotrechner            # dasselbe, ohne installiertes Skript
 ```
 
 Unter Linux braucht Qt zusätzlich die üblichen X11- bzw. Wayland-Bibliotheken.

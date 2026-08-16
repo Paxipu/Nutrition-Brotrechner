@@ -179,6 +179,36 @@ class TestPaths:
         assert not target.exists()
 
 
+class TestPackagedResources:
+    """Ressourcen müssen im installierten Paket ankommen, nicht nur im Quellbaum."""
+
+    def test_icon_files_are_shipped(self) -> None:
+        from brotrechner.gui.app import icon_path
+
+        for suffix in ("png", "ico"):
+            path = icon_path(suffix)
+            assert path.exists(), path
+            assert path.stat().st_size > 0
+
+    def test_icon_contains_the_small_sizes_windows_needs(self) -> None:
+        from PIL import Image
+
+        from brotrechner.gui.app import icon_path
+
+        with Image.open(icon_path("ico")) as image:
+            sizes = set(image.info.get("sizes", set()))
+        assert (16, 16) in sizes
+        assert (256, 256) in sizes
+
+    def test_launcher_is_present_and_valid_python(self) -> None:
+        """Der Doppelklick-Starter darf nicht durch einen Tippfehler unbrauchbar werden."""
+        import ast
+
+        launcher = Path(__file__).resolve().parents[1] / "Brotrechner starten.pyw"
+        assert launcher.exists(), launcher
+        ast.parse(launcher.read_text(encoding="utf-8"))
+
+
 class TestSettings:
     def test_defaults(self) -> None:
         settings = Settings()

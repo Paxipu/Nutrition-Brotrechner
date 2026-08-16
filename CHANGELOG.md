@@ -11,6 +11,12 @@ automatisch übernommen.
 
 ### Hinzugefügt
 
+- **Start per Doppelklick.** `Brotrechner starten.pyw` im Hauptordner öffnet
+  das Programm ohne Installation und ohne Konsolenfenster. Fehlt eine
+  Voraussetzung, erscheint eine verständliche Meldung statt eines Fensters,
+  das sich wortlos wieder schließt.
+- **Programmsymbol** für Fenster, Taskleiste und Verknüpfungen, erzeugt von
+  `tools/build_icon.py` in allen von Windows verlangten Größen.
 - **Hersteller als eigenes Feld.** Die Identität einer Zutat ist jetzt das Paar
   aus Name und Hersteller. Dadurch sind Filter, Vergleiche und die
   Zutatenauswahl nach Hersteller möglich.
