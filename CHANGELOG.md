@@ -17,9 +17,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ist bei zwei verschiedenen Objekten immer falsch, gleichgültig welche
   Schaltfläche der Anwender gewählt hat. Die Bestätigungszweige brachen deshalb
   ausnahmslos ab; sichtbar war davon nichts, hörbar nur der Systemton des
-  Dialogs. Betroffen waren vier Rückfragen: Rezept überschreiben, Rezept
-  löschen, Zutat löschen und Etikettdatei überschreiben. Verglichen wird jetzt
-  an jeder Qt-Grenze mit `==`, gebündelt in `gui/qt_compat.confirmed()`.
+  Dialogs. Betroffen waren fünf Rückfragen: Rezept überschreiben, Rezept
+  löschen, Zutat löschen, Etikettdatei überschreiben und „Trotzdem speichern?“
+  bei bemängelten Zutatenwerten. Verglichen wird jetzt an jeder Qt-Grenze mit
+  `==`, gebündelt in `gui/qt_compat.confirmed()`.
+- **Eine bemängelte Zutat ließ sich überhaupt nicht speichern.** Meldete die
+  Prüfung einen Fehler, fragte der Zutatendialog „Trotzdem speichern?“ - und
+  verwarf die Eingabe auch dann, wenn man zustimmte. Dieselbe Ursache.
 
 ### Geändert
 
