@@ -41,8 +41,12 @@ dev = [
     "pytest>=8",
     "pytest-cov>=5",
     "hypothesis>=6.100",
-    "ruff>=0.6",
-    "mypy>=1.10",
+    # Obergrenzen sind hier kein Selbstzweck: ruff nimmt in jeder Nebenversion
+    # neue Regeln in Betrieb. Ohne Deckel zieht die CI eine neuere Fassung als
+    # der Entwicklungsrechner und meldet Verstöße gegen Regeln, die es lokal
+    # noch gar nicht gab.
+    "ruff>=0.15,<0.17",
+    "mypy>=1.10,<3",
     "pip-audit>=2.7",
     "reportlab>=4.0",
 ]
@@ -105,6 +109,12 @@ ignore = [
 # with many returns, and QModelIndex() as a default argument is the documented
 # signature. Dialog constructors legitimately assemble many widgets.
 "src/brotrechner/gui/**" = ["PLR0911", "PLR0915", "B008"]
+# Der Generator lebt von seiner Tabellenform: Die Kurzfunktion n() nimmt ihre
+# Nährwerte bewusst positional entgegen, sonst bläht sich die Tabelle mit 107
+# Einträgen auf ein Vielfaches auf. Als Regelausnahme statt als noqa-Kommentar,
+# weil PLR0917 je nach ruff-Version stabil oder Vorschau ist - ein Kommentar
+# wäre in der einen Fassung nötig und in der anderen selbst ein Verstoß.
+"tools/build_seed_database.py" = ["PLR0917"]
 
 [tool.ruff.lint.pylint]
 max-branches = 15
@@ -119,7 +129,7 @@ mypy_path = "src"
 packages = ["brotrechner"]
 
 [[tool.mypy.overrides]]
-module = ["reportlab.*", "PIL.*"]
+module = ["reportlab.*", "PIL.*", "matplotlib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

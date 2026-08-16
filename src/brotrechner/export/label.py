@@ -361,23 +361,23 @@ def _draw_header(
     y = _draw_wrapped_centered(
         draw,
         single_line(options.title),
-        fonts.get(mm(4.6), bold=True),
-        palette.accent,
-        left,
-        right,
-        top,
-        mm(5.6),
+        font=fonts.get(mm(4.6), bold=True),
+        colour=palette.accent,
+        left=left,
+        right=right,
+        top=top,
+        line_height=mm(5.6),
     )
     if single_line(options.subtitle):
         y = _draw_wrapped_centered(
             draw,
             single_line(options.subtitle),
-            fonts.get(mm(2.6)),
-            palette.muted,
-            left,
-            right,
-            y + mm(0.6),
-            mm(3.4),
+            font=fonts.get(mm(2.6)),
+            colour=palette.muted,
+            left=left,
+            right=right,
+            top=y + mm(0.6),
+            line_height=mm(3.4),
         )
 
     date_line = _date_line(options)
@@ -454,6 +454,7 @@ def _format_weight(grams: float) -> str:
 def _draw_wrapped_centered(
     draw: ImageDraw.ImageDraw,
     text: str,
+    *,
     font: Font,
     colour: str,
     left: int,

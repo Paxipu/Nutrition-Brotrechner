@@ -10,6 +10,7 @@ allen üblichen Systempfaden.
 from __future__ import annotations
 
 import functools
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Final, TypeAlias
@@ -66,13 +67,13 @@ def _search_dirs() -> list[Path]:
         ]
 
     # matplotlib bringt DejaVu mit. Das ist keine Abhängigkeit, sondern nur ein
-    # weiterer Ort, an dem eine brauchbare Schrift liegen kann.
-    try:  # pragma: no cover - hängt von der Umgebung ab
-        import matplotlib  # noqa: PLC0415
-
-        dirs.append(Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf")
-    except ImportError:  # pragma: no cover
-        pass
+    # weiterer Ort, an dem eine brauchbare Schrift liegen kann. Gesucht wird
+    # über die Modulsuche statt über einen Import: Das vermeidet, matplotlib
+    # nur wegen eines Verzeichnispfads vollständig zu laden, und funktioniert
+    # auch dort, wo das Paket gar nicht installiert ist.
+    spec = importlib.util.find_spec("matplotlib")
+    if spec is not None and spec.origin:  # pragma: no cover - hängt von der Umgebung ab
+        dirs.append(Path(spec.origin).parent / "mpl-data" / "fonts" / "ttf")
 
     return [d for d in dirs if d.is_dir()]
 
