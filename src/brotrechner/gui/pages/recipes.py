@@ -8,6 +8,7 @@ Damit sieht man auf einen Blick, was ein altes Rezept heute kosten würde.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from html import escape
 
 from PySide6.QtCore import Qt, Signal, SignalInstance
 from PySide6.QtWidgets import (
@@ -41,6 +42,7 @@ class RecipesPage(QWidget):
     load_requested = Signal(str)
     scale_requested = Signal(str)
     rename_requested = Signal(str)
+    notes_requested = Signal(str)
     delete_requested = Signal(str)
 
     def __init__(self, tokens: Tokens, parent: QWidget | None = None) -> None:
@@ -110,9 +112,14 @@ class RecipesPage(QWidget):
         self.btn_load.setProperty("accent", True)
         self.btn_scale = QPushButton("Skalieren …")
         self.btn_rename = QPushButton("Umbenennen …")
+        self.btn_notes = QPushButton("Notizen …")
+        self.btn_notes.setToolTip(
+            "Erfahrungen zum Rezept festhalten - was schiefging, was half.\n"
+            "Der Text erscheint in dieser Vorschau."
+        )
         self.btn_delete = QPushButton("Löschen")
         self.btn_delete.setProperty("danger", True)
-        for button in (self.btn_load, self.btn_scale, self.btn_rename):
+        for button in (self.btn_load, self.btn_scale, self.btn_rename, self.btn_notes):
             buttons.addWidget(button)
         buttons.addStretch(1)
         buttons.addWidget(self.btn_delete)
@@ -125,6 +132,7 @@ class RecipesPage(QWidget):
         self.btn_load.clicked.connect(lambda: self._emit(self.load_requested, "laden"))
         self.btn_scale.clicked.connect(lambda: self._emit(self.scale_requested, "skalieren"))
         self.btn_rename.clicked.connect(lambda: self._emit(self.rename_requested, "umbenennen"))
+        self.btn_notes.clicked.connect(lambda: self._emit(self.notes_requested, "kommentieren"))
         self.btn_delete.clicked.connect(lambda: self._emit(self.delete_requested, "löschen"))
 
     # ── Daten ─────────────────────────────────────────────────────────────
@@ -209,6 +217,22 @@ class RecipesPage(QWidget):
             + "</p>"
         )
 
+        # Der letzte Backtag ist die Angabe, die man beim Wiederaufruf sucht:
+        # "Wann hatte ich das zuletzt gebacken?" Er wird beim Erstellen eines
+        # Etiketts fortgeschrieben.
+        history = ""
+        if recipe.last_baked_on is not None:
+            haltbar = (
+                f" · haltbar bis {recipe.last_best_before.strftime('%d.%m.%Y')}"
+                if recipe.last_best_before is not None
+                else ""
+            )
+            history = (
+                f"<p style='color:{t.text_muted};margin:2px 0 0 0'>"
+                f"zuletzt gebacken am {recipe.last_baked_on.strftime('%d.%m.%Y')}"
+                f"{haltbar}</p>"
+            )
+
         def ingredient_cell(name: str, manufacturer: str) -> str:
             if not manufacturer:
                 return name
@@ -260,9 +284,13 @@ class RecipesPage(QWidget):
                 f"Nicht mehr in der Datenbank: {names}</p>"
             )
 
-        notes = (
-            f"<p style='margin-top:10px;color:{t.text_muted}'><i>{recipe.notes}</i></p>"
-            if recipe.notes
-            else ""
-        )
-        return head + table + nutrition + cost + warning + notes
+        notes = ""
+        if recipe.notes:
+            # Zeilenumbrüche des Anwenders erhalten - Notizen sind oft eine
+            # Liste kurzer Beobachtungen, kein Fließtext.
+            text = escape(recipe.notes).replace("\n", "<br>")
+            notes = (
+                "<p style='margin:12px 0 2px 0'><b>Notizen</b></p>"
+                f"<p style='margin:0;color:{t.text_muted}'><i>{text}</i></p>"
+            )
+        return head + history + table + nutrition + cost + warning + notes

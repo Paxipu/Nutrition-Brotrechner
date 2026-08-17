@@ -121,23 +121,10 @@ class TestConfirmationDialogs:
     grün, während das Programm nicht funktionierte.
     """
 
-    @staticmethod
-    def _install_dialogs(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
-        from PySide6.QtWidgets import QInputDialog, QMessageBox
-
-        ja = int(QMessageBox.StandardButton.Yes)
-        ok = int(QMessageBox.StandardButton.Ok)
-        for art in ("information", "warning", "critical"):
-            monkeypatch.setattr(QMessageBox, art, lambda *_a, **_k: ok)
-        monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: ja)
-        monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: (name, True))
-        monkeypatch.setattr(QInputDialog, "getMultiLineText", lambda *_a, **_k: ("", True))
-
     @pytest.fixture
-    def window(self, qapp: object, data_dir, monkeypatch: pytest.MonkeyPatch):
+    def window(self, qapp: object, data_dir, dialogs: dict[str, object]):
         """Hauptfenster auf einem leeren, isolierten Datenverzeichnis."""
-        del qapp
-        self._install_dialogs(monkeypatch, "Testbrot")
+        del qapp, dialogs
         from brotrechner.gui.main_window import MainWindow
 
         widget = MainWindow(data_dir=data_dir)

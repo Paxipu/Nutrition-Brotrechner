@@ -3,6 +3,47 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [5.1.0] – 2026-08-17
+
+### Hinzugefügt
+
+- **Das Backdatum des Etiketts lässt sich wählen.** Bisher war es fest der
+  heutige Tag; wer das Etikett erst am Tag danach druckte, bekam ein falsches
+  Datum aufs Brot und konnte nichts dagegen tun. Jetzt steht dort ein Feld mit
+  Kalender.
+- **Die Mindesthaltbarkeit folgt dem Backdatum – aber nur in diese Richtung.**
+  Wird der Backtag verschoben, wandert die Haltbarkeit um dieselbe Spanne mit.
+  Wird die Haltbarkeit von Hand gesetzt, bleibt das Backdatum unangetastet und
+  die gewählte Spanne gilt fortan auch für den nächsten Backtag: Wer einmal
+  14 Tage einstellt, meint 14 Tage. Die Haltbarkeit kann nicht mehr vor dem
+  Backtag liegen.
+- **Notizen zu einem Rezept sind jederzeit nachträglich zu ändern.** Auf der
+  Rezepteseite gibt es dafür die Schaltfläche „Notizen …“ mit einem
+  mehrzeiligen Feld. Erfahrungen sammeln sich erst über mehrere Backvorgänge an
+  – sie zu ergänzen soll nicht bedeuten, das ganze Rezept in den Rechner laden
+  und neu speichern zu müssen. Der Text erscheint in der Rezeptvorschau,
+  Zeilenumbrüche bleiben erhalten.
+- **Jedes erstellte Etikett vermerkt seinen Backtag am Rezept**, zusammen mit
+  der Mindesthaltbarkeit. Die Rezeptvorschau zeigt beides an, sodass beim
+  nächsten Aufruf ohne Suchen sichtbar ist, wann zuletzt gebacken wurde. Nur
+  ein wirklich gespeichertes oder gedrucktes Etikett zählt – den Dialog bloß
+  anzusehen datiert kein Rezept um. Die Druckvorschau zählt bewusst nicht mit.
+
+### Geändert
+
+- **Der Kalender beginnt immer beim heutigen Tag**, auch wenn das Rezept
+  zuletzt vor Monaten gebacken wurde. Sonst müsste man sich zum Nachbacken
+  monateweise nach vorn klicken. Der frühere Backtag steht stattdessen als
+  Hinweis unter dem Feld.
+- Notizen werden beim Speichern eines Rezepts in einem eigenen Dialog erfasst
+  statt in einer einzeiligen Abfrage – es sind meist mehrere Sätze.
+- Beim **Überschreiben eines Rezepts** bleiben neben Anlagedatum und Notizen
+  jetzt auch Backtag und Haltbarkeit erhalten. Sie gehören zur Geschichte des
+  Rezepts, nicht zu den Werten aus dem Rechner.
+- Der Etikettdialog ist 40 Pixel höher: Mit den beiden Datumsfeldern passte die
+  Seitenspalte sonst um 13 Pixel nicht mehr in die Mindesthöhe, was die
+  Schaltflächen gestaucht hätte. Ein Test misst das jetzt nach.
+
 ## [5.0.3] – 2026-08-16
 
 ### Behoben

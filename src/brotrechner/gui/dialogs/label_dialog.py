@@ -57,6 +57,14 @@ _DPI_CHOICES: tuple[tuple[str, int], ...] = (
 #: bei jeder Änderung sofort wirkt.
 _PREVIEW_DPI = 110
 
+#: Voreingestellte Haltbarkeit eines frisch gebackenen Brots.
+_DEFAULT_SHELF_LIFE_DAYS = 7
+
+
+def _to_date(value: QDate) -> date:
+    """Wandelt ein ``QDate`` in ein Python-Datum."""
+    return date(value.year(), value.month(), value.day())
+
 
 def pil_to_qimage(image: Image.Image) -> QImage:
     """Wandelt ein Pillow-Bild in ein ``QImage``.
@@ -80,20 +88,50 @@ class LabelDialog(QDialog):
         *,
         recipe_name: str,
         default_dir: Path,
+        last_baked_on: date | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._analysis = analysis
         self._default_dir = default_dir
+        self._last_baked_on = last_baked_on
         # Verhindert eine Rückkopplung: setPixmap ändert den Größenhinweis des
         # Labels, was ein resizeEvent auslösen kann, das erneut zeichnen würde.
         self._rendering = False
+        # Haltbarkeit in Tagen. Sie ist die eigentlich gemeinte Größe: Wer die
+        # Mindesthaltbarkeit von Hand setzt, legt damit eine Spanne fest, die
+        # auch für den nächsten Backtag gelten soll.
+        self._shelf_life_days = _DEFAULT_SHELF_LIFE_DAYS
+        # Sperre gegen gegenseitiges Auslösen der beiden Datumsfelder.
+        self._syncing_dates = False
+        # Erst wenn ein Etikett wirklich entstanden ist, gilt der Tag als
+        # Backtag. Das bloße Öffnen des Dialogs darf kein Rezept umdatieren.
+        self._label_was_created = False
 
         self.setWindowTitle("Etikett")
-        self.setMinimumSize(880, 640)
+        # Die Höhe richtet sich nach der Seitenspalte: Sie muss Gestaltung,
+        # Inhalt *und* alle Schaltflächen ungestaucht zeigen können.
+        self.setMinimumSize(880, 680)
 
         self._build_ui(recipe_name)
         self._refresh()
+
+    # ── Ergebnis für den Aufrufer ─────────────────────────────────────────
+
+    @property
+    def label_was_created(self) -> bool:
+        """Wurde ein Etikett gespeichert oder gedruckt?"""
+        return self._label_was_created
+
+    @property
+    def baked_on(self) -> date:
+        """Das im Dialog eingestellte Backdatum."""
+        return _to_date(self.date_baked.date())
+
+    @property
+    def best_before(self) -> date | None:
+        """Mindesthaltbarkeit, sofern angehakt."""
+        return self._best_before()
 
     # ── Aufbau ────────────────────────────────────────────────────────────
 
@@ -156,11 +194,39 @@ class LabelDialog(QDialog):
         content = Card("Inhalt")
         self.chk_date = QCheckBox("Backdatum anzeigen")
         self.chk_date.setChecked(True)
+
+        # Der Kalender beginnt bewusst immer beim heutigen Tag, auch wenn das
+        # Rezept zuletzt vor Monaten gebacken wurde: Sonst müsste man sich zum
+        # Nachbacken monateweise nach vorn klicken. Der alte Backtag steht
+        # stattdessen als Hinweis darunter.
+        self.date_baked = QDateEdit(QDate.currentDate())
+        self.date_baked.setCalendarPopup(True)
+        self.date_baked.setDisplayFormat("dd.MM.yyyy")
+        self.date_baked.setToolTip(
+            "Tag des Backens. Wird das Etikett später erstellt, hier den\n"
+            "tatsächlichen Backtag eintragen."
+        )
+        self.lbl_last_baked = QLabel()
+        self.lbl_last_baked.setObjectName("Muted")
+        if self._last_baked_on is not None:
+            self.lbl_last_baked.setText(
+                f"zuletzt gebacken am {self._last_baked_on.strftime('%d.%m.%Y')}"
+            )
+        else:
+            # Eine leere Beschriftung belegt trotzdem Zeilenhöhe. In der engen
+            # Seitenspalte ist das der Platz, der den Schaltflächen fehlt.
+            self.lbl_last_baked.setVisible(False)
+
         self.chk_best_before = QCheckBox("Mindesthaltbarkeitsdatum")
-        self.date_best_before = QDateEdit(QDate.currentDate().addDays(7))
+        self.date_best_before = QDateEdit(QDate.currentDate().addDays(_DEFAULT_SHELF_LIFE_DAYS))
         self.date_best_before.setCalendarPopup(True)
         self.date_best_before.setDisplayFormat("dd.MM.yyyy")
         self.date_best_before.setEnabled(False)
+        self.date_best_before.setMinimumDate(QDate.currentDate())
+        self.date_best_before.setToolTip(
+            "Verschiebt sich mit dem Backdatum. Wird es von Hand gesetzt,\n"
+            "bleibt die gewählte Spanne auch für den nächsten Backtag erhalten."
+        )
         self.chk_ingredients = QCheckBox("Zutatenverzeichnis")
         self.chk_ingredients.setChecked(True)
         self.chk_ingredients.setToolTip(
@@ -174,6 +240,8 @@ class LabelDialog(QDialog):
 
         for widget in (
             self.chk_date,
+            self.date_baked,
+            self.lbl_last_baked,
             self.chk_best_before,
             self.date_best_before,
             self.chk_ingredients,
@@ -224,7 +292,9 @@ class LabelDialog(QDialog):
         ):
             check.toggled.connect(self._refresh)
         self.chk_best_before.toggled.connect(self.date_best_before.setEnabled)
-        self.date_best_before.dateChanged.connect(self._refresh)
+        self.chk_date.toggled.connect(self.date_baked.setEnabled)
+        self.date_baked.dateChanged.connect(self._on_baked_changed)
+        self.date_best_before.dateChanged.connect(self._on_best_before_changed)
         self.cmb_dpi.currentIndexChanged.connect(self._update_dimensions)
 
         self.btn_save.clicked.connect(self._on_save)
@@ -232,6 +302,40 @@ class LabelDialog(QDialog):
         self.btn_print.clicked.connect(self._on_print)
         self.btn_preview_print.clicked.connect(self._on_print_preview)
         self.btn_close.clicked.connect(self.reject)
+
+    # ── Datumskopplung ────────────────────────────────────────────────────
+
+    def _on_baked_changed(self, baked: QDate) -> None:
+        """Zieht die Mindesthaltbarkeit mit dem Backdatum mit.
+
+        Die Richtung ist Absicht und gilt nur hier: Das Backdatum bestimmt,
+        wann das Brot verdirbt - nicht umgekehrt. Verschoben wird um die
+        zuletzt gewählte Haltbarkeitsspanne, damit eine von Hand gesetzte
+        Haltbarkeit von zum Beispiel 21 Tagen auch beim nächsten Backtag noch
+        21 Tage bedeutet.
+        """
+        if self._syncing_dates:
+            return
+        self._syncing_dates = True
+        try:
+            # Die Untergrenze zuerst: Sonst stutzt Qt den neuen Wert am alten
+            # Minimum zurecht, wenn der Backtag nach vorn wandert.
+            self.date_best_before.setMinimumDate(baked)
+            self.date_best_before.setDate(baked.addDays(self._shelf_life_days))
+        finally:
+            self._syncing_dates = False
+        self._refresh()
+
+    def _on_best_before_changed(self, best_before: QDate) -> None:
+        """Merkt sich die von Hand gewählte Haltbarkeitsspanne.
+
+        Das Backdatum bleibt dabei ausdrücklich unangetastet - ein Automatismus
+        in diese Richtung würde die eben getroffene Wahl wieder zunichtemachen.
+        """
+        if self._syncing_dates:
+            return
+        self._shelf_life_days = max(0, self.date_baked.date().daysTo(best_before))
+        self._refresh()
 
     # ── Optionen und Vorschau ─────────────────────────────────────────────
 
@@ -249,7 +353,7 @@ class LabelDialog(QDialog):
             show_reference_hint=self.chk_reference.isChecked(),
             footer=self.txt_footer.text().strip(),
             best_before=self._best_before(),
-            baked_on=date.today(),
+            baked_on=_to_date(self.date_baked.date()),
             ingredients=self._ingredient_names(),
             net_weight_g=self._analysis.baked_weight_g,
         )
@@ -258,8 +362,7 @@ class LabelDialog(QDialog):
         """Mindesthaltbarkeitsdatum, sofern angehakt."""
         if not self.chk_best_before.isChecked():
             return None
-        qdate = self.date_best_before.date()
-        return date(qdate.year(), qdate.month(), qdate.day())
+        return _to_date(self.date_best_before.date())
 
     def _ingredient_names(self) -> tuple[str, ...]:
         """Zutatennamen, absteigend nach Anteil sortiert.
@@ -325,7 +428,7 @@ class LabelDialog(QDialog):
             ).strip()
             or "Etikett"
         )
-        return f"{stem}_{date.today():%Y-%m-%d}.png"
+        return f"{stem}_{_to_date(self.date_baked.date()):%Y-%m-%d}.png"
 
     def _write(self, path: Path) -> bool:
         """Schreibt das Etikett; meldet Fehler statt sie zu verschlucken."""
@@ -341,6 +444,7 @@ class LabelDialog(QDialog):
                 f"{path}\n\nkonnte nicht geschrieben werden:\n{exc}",
             )
             return False
+        self._label_was_created = True
         return True
 
     def _on_save(self) -> None:
@@ -400,6 +504,9 @@ class LabelDialog(QDialog):
         dialog.setWindowTitle("Etikett drucken")
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self._paint_to_printer(printer)
+            # Die Druckvorschau zählt bewusst nicht: Erst der wirkliche Druck
+            # macht den eingestellten Tag zum Backtag des Rezepts.
+            self._label_was_created = True
 
     def _on_print_preview(self) -> None:
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)

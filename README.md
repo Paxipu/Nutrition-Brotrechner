@@ -21,7 +21,9 @@ sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
 **Etikettieren.** Ein Nährwert-Etikett in vier Formaten und drei Farbstimmungen,
 mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog –
 ohne Umweg über eine Datei. Aufbau und Reihenfolge folgen Anhang XV der
-VO (EU) Nr. 1169/2011.
+VO (EU) Nr. 1169/2011. Backdatum und Mindesthaltbarkeit sind frei wählbar: Das
+Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
+bleibt erhalten.
 
 **Prüfen.** Eine eingebaute Plausibilitätsprüfung findet Datenfehler, bevor sie
 in einer Auswertung landen: verletzte Massenbilanz, ein Brennwert, der nicht zu
@@ -31,6 +33,11 @@ Kommandozeile aus, etwa in einer CI-Pipeline.
 **Verwalten.** Zutaten mit eigenem Herstellerfeld, Preisen samt Quelle und
 Preisstand, Preishistorie, Import und Export einzelner Zutaten als JSON,
 Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export.
+
+**Nachhalten.** Notizen lassen sich jederzeit zu einem Rezept schreiben – was
+schiefging, welcher Kniff half. Jedes erstellte Etikett vermerkt seinen Backtag
+samt Haltbarkeit am Rezept, sodass beim nächsten Aufruf sichtbar ist, wann
+zuletzt gebacken wurde.
 
 | Zutatenverwaltung | Etikett mit Vorschau |
 |---|---|

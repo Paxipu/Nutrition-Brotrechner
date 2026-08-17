@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSize
@@ -31,7 +32,7 @@ from PySide6.QtWidgets import (
 
 from brotrechner import __version__, paths
 from brotrechner.core.analysis import RecipeAnalysis
-from brotrechner.core.models import Ingredient
+from brotrechner.core.models import Ingredient, Recipe
 from brotrechner.core.validation import Severity, validate_database
 from brotrechner.data import portable
 from brotrechner.data.repository import (
@@ -50,6 +51,7 @@ from brotrechner.gui.dialogs.label_dialog import LabelDialog
 from brotrechner.gui.dialogs.simple_dialogs import (
     AboutDialog,
     ImportDialog,
+    NotesDialog,
     ScaleDialog,
     ValidationDialog,
 )
@@ -247,6 +249,7 @@ class MainWindow(QMainWindow):
         self.page_recipes.load_requested.connect(self._on_load_recipe)
         self.page_recipes.scale_requested.connect(self._on_scale_recipe)
         self.page_recipes.rename_requested.connect(self._on_rename_recipe)
+        self.page_recipes.notes_requested.connect(self._on_recipe_notes)
         self.page_recipes.delete_requested.connect(self._on_delete_recipe)
 
         if not report.is_available():
@@ -468,14 +471,16 @@ class MainWindow(QMainWindow):
                 return
             existing = self._recipes.get(recipe.name)
             if existing is not None:
+                # Was nicht aus dem Rechner kommt, gehört zur Geschichte des
+                # Rezepts und darf beim Überschreiben nicht verlorengehen.
                 recipe.created_at = existing.created_at
                 recipe.notes = existing.notes
+                recipe.last_baked_on = existing.last_baked_on
+                recipe.last_best_before = existing.last_best_before
 
-        notes, accepted = QInputDialog.getMultiLineText(
-            self, "Notizen", "Notizen zum Rezept (optional):", recipe.notes
-        )
-        if accepted:
-            recipe.notes = notes
+        notes_dialog = NotesDialog(recipe.name, recipe.notes, self)
+        if notes_dialog.exec() == NotesDialog.DialogCode.Accepted:
+            recipe.notes = notes_dialog.notes
 
         self._recipes.add(recipe, replace_existing=True)
         if self._save_recipes():
@@ -550,6 +555,26 @@ class MainWindow(QMainWindow):
         if self._save_recipes():
             self._refresh_all()
             self._flash(f"Umbenannt in „{new_name}“")
+
+    def _on_recipe_notes(self, name: str) -> None:
+        """Notizen eines gespeicherten Rezepts nachträglich bearbeiten.
+
+        Erfahrungen sammeln sich erst über mehrere Backvorgänge an. Sie zu
+        ergänzen darf deshalb nicht bedeuten, das ganze Rezept in den Rechner
+        laden und neu speichern zu müssen.
+        """
+        recipe = self._recipes.get(name)
+        if recipe is None:  # pragma: no cover - Liste war veraltet
+            return
+        dialog = NotesDialog(recipe.name, recipe.notes, self)
+        if dialog.exec() != NotesDialog.DialogCode.Accepted:
+            return
+        recipe.notes = dialog.notes
+        recipe.modified_at = datetime.now(timezone.utc)
+        if self._save_recipes():
+            self._refresh_all()
+            self.page_recipes.select_recipe(recipe.name)
+            self._flash(f"Notizen zu „{recipe.name}“ gespeichert")
 
     def _on_delete_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)
@@ -751,12 +776,34 @@ class MainWindow(QMainWindow):
                 "Für ein Etikett braucht es Zutaten und das Gewicht des gebackenen Brots.",
             )
             return
-        LabelDialog(
+        name = self.page_calculator.recipe_name
+        stored = self._recipes.get(name)
+        dialog = LabelDialog(
             self._analysis,
-            recipe_name=self.page_calculator.recipe_name,
+            recipe_name=name,
             default_dir=self._export_dir(),
+            last_baked_on=stored.last_baked_on if stored else None,
             parent=self,
-        ).exec()
+        )
+        dialog.exec()
+        self._record_baking_day(stored, dialog)
+
+    def _record_baking_day(self, recipe: Recipe | None, dialog: LabelDialog) -> None:
+        """Schreibt den Backtag des erstellten Etiketts ans Rezept fort.
+
+        Nur ein wirklich gespeichertes oder gedrucktes Etikett zählt: Den
+        Dialog bloß anzusehen darf ein Rezept nicht umdatieren. Ein Rezept, das
+        noch gar nicht gespeichert ist, hat auch keine Geschichte - dann ist
+        hier nichts zu tun.
+        """
+        if recipe is None or not dialog.label_was_created:
+            return
+        recipe.last_baked_on = dialog.baked_on
+        recipe.last_best_before = dialog.best_before
+        recipe.modified_at = datetime.now(timezone.utc)
+        if self._save_recipes():
+            self._refresh_all()
+            self._flash(f"Backtag {dialog.baked_on:%d.%m.%Y} bei „{recipe.name}“ vermerkt")
 
     def _on_report(self) -> None:
         if self._analysis.is_empty:

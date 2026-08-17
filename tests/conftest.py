@@ -129,3 +129,57 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     target.mkdir()
     monkeypatch.setenv("BROTRECHNER_DATA_DIR", str(target))
     yield target
+
+
+@pytest.fixture
+def dialogs(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Beantwortet alle modalen Dialoge, damit Tests nicht daran hängenbleiben.
+
+    Die Rückgaben bilden Qt originalgetreu ab: Die angeklickte Schaltfläche
+    kommt als *Zahl* zurück, nicht als Enum-Mitglied. Attrappen, die stattdessen
+    das Enum lieferten, ließen einen echten Fehler jahrelang durchrutschen -
+    siehe ``brotrechner.gui.qt_compat``.
+
+    Das zurückgegebene Wörterbuch steuert die Antworten:
+    ``name`` für Texteingaben, ``notes`` für den Notizdialog (``None`` heißt
+    "unverändert"), ``button`` für Ja/Nein und ``accept`` für Dialoge mit
+    ``exec()``.
+    """
+    from PySide6.QtWidgets import QDialog, QInputDialog, QMessageBox
+
+    answers: dict[str, object] = {
+        "name": "Testbrot",
+        "notes": None,
+        "button": int(QMessageBox.StandardButton.Yes),
+        "accept": True,
+    }
+
+    for kind in ("information", "warning", "critical"):
+        monkeypatch.setattr(QMessageBox, kind, lambda *_a, **_k: answers["button"])
+    monkeypatch.setattr(QMessageBox, "question", lambda *_a, **_k: answers["button"])
+    monkeypatch.setattr(QInputDialog, "getText", lambda *_a, **_k: (answers["name"], True))
+    monkeypatch.setattr(
+        QInputDialog, "getMultiLineText", lambda *_a, **_k: (answers["notes"] or "", True)
+    )
+
+    class _NotesStub:
+        """Ersetzt den Notizdialog, ohne ein Fenster zu öffnen."""
+
+        DialogCode = QDialog.DialogCode
+
+        def __init__(self, recipe_name: str, notes: str, parent: object = None) -> None:
+            del recipe_name, parent
+            self._current = notes
+
+        def exec(self) -> int:
+            return int(
+                QDialog.DialogCode.Accepted if answers["accept"] else QDialog.DialogCode.Rejected
+            )
+
+        @property
+        def notes(self) -> str:
+            wanted = answers["notes"]
+            return self._current if wanted is None else str(wanted)
+
+    monkeypatch.setattr("brotrechner.gui.main_window.NotesDialog", _NotesStub)
+    return answers

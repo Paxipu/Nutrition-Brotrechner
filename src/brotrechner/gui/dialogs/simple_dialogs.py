@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPlainTextEdit,
     QRadioButton,
     QSizePolicy,
     QTableWidget,
@@ -32,7 +33,7 @@ from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card
 from brotrechner.i18n import format_number
 
-__all__ = ["AboutDialog", "ImportDialog", "ScaleDialog", "ValidationDialog"]
+__all__ = ["AboutDialog", "ImportDialog", "NotesDialog", "ScaleDialog", "ValidationDialog"]
 
 #: Inhaltsbreite des Über-Dialogs in Pixeln.
 _ABOUT_WIDTH = 540
@@ -149,6 +150,57 @@ class ScaleDialog(QDialog):
         if len(self._recipe.items) > 6:
             lines.append(f"… und {len(self._recipe.items) - 6} weitere")
         self.lbl_preview.setText("<br>".join(lines))
+
+
+class NotesDialog(QDialog):
+    """Notizen zu einem Rezept schreiben und ändern.
+
+    Ein eigener Dialog statt einer einzeiligen Abfrage: Was hier hineingehört -
+    was beim letzten Mal schiefging, welcher Kniff geholfen hat - sind mehrere
+    Sätze, die man beim Wiederlesen auch wiederfinden können muss.
+    """
+
+    def __init__(self, recipe_name: str, notes: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Notizen zum Rezept")
+        self.setMinimumSize(520, 380)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(SPACING["md"])
+
+        card = Card(recipe_name)
+        hint = QLabel(
+            "Erfahrungen, Kniffe, Abweichungen - alles, was beim nächsten Mal "
+            "hilfreich ist. Der Text erscheint in der Rezeptvorschau."
+        )
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        card.add_widget(hint)
+
+        self.txt_notes = QPlainTextEdit(notes)
+        self.txt_notes.setPlaceholderText(
+            "z. B. Teig war zu weich - beim nächsten Mal 30 g Wasser weniger."
+        )
+        card.add_widget(self.txt_notes, 1)
+        layout.addWidget(card, 1)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        ok.setText("Übernehmen")
+        ok.setProperty("accent", True)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Abbrechen")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.txt_notes.setFocus()
+
+    @property
+    def notes(self) -> str:
+        """Der eingegebene Text ohne überflüssigen Rand."""
+        return self.txt_notes.toPlainText().strip()
 
 
 class ValidationDialog(QDialog):

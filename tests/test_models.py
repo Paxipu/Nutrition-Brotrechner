@@ -265,6 +265,42 @@ class TestRecipe:
         assert RecipeItem("k", "Wasser", "", 1).display_name == "Wasser"
 
 
+class TestBakingDates:
+    """Wann wurde dieses Rezept zuletzt gebacken, und wie lange hielt es?
+
+    Beide Angaben gehören zum Rezept, nicht zum Etikett: Beim nächsten Aufruf
+    soll ohne Suchen sichtbar sein, wann zuletzt gebacken wurde.
+    """
+
+    def test_dates_survive_a_round_trip(self, simple_recipe: Recipe) -> None:
+        simple_recipe.last_baked_on = date(2026, 8, 14)
+        simple_recipe.last_best_before = date(2026, 8, 21)
+        restored = Recipe.from_dict(simple_recipe.to_dict())
+        assert restored.last_baked_on == date(2026, 8, 14)
+        assert restored.last_best_before == date(2026, 8, 21)
+
+    def test_a_recipe_starts_without_baking_dates(self, simple_recipe: Recipe) -> None:
+        assert simple_recipe.last_baked_on is None
+        assert simple_recipe.last_best_before is None
+
+    def test_older_files_without_the_fields_stay_readable(self) -> None:
+        """Bestandsrezepte kennen die Felder nicht - das darf nichts kosten."""
+        restored = Recipe.from_dict({"name": "Altbrot", "items": []})
+        assert restored.last_baked_on is None
+        assert restored.last_best_before is None
+
+    @pytest.mark.parametrize("kaputt", ["", "gestern", "2026-13-45", 17, None])
+    def test_an_unreadable_date_becomes_none(self, kaputt: object) -> None:
+        """Ein unlesbares Datum darf das Rezept nicht unbrauchbar machen."""
+        restored = Recipe.from_dict({"name": "B", "items": [], "last_baked_on": kaputt})
+        assert restored.last_baked_on is None
+
+    def test_a_scaled_recipe_carries_no_baking_date(self, simple_recipe: Recipe) -> None:
+        """Die Verdopplung ist ein neues Rezept - gebacken wurde sie noch nie."""
+        simple_recipe.last_baked_on = date(2026, 8, 14)
+        assert simple_recipe.scaled(2.0).last_baked_on is None
+
+
 class TestProperties:
     @given(
         name=st.text(min_size=1, max_size=40).filter(lambda s: s.strip()),

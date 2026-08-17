@@ -387,6 +387,13 @@ class Recipe:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     modified_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
+    #: Backtag und Mindesthaltbarkeit des zuletzt gedruckten Etiketts. Sie
+    #: gehören zum Rezept, nicht zum Etikett: Beim nächsten Aufruf soll ohne
+    #: Suchen sichtbar sein, wann zuletzt gebacken wurde und wie lange das Brot
+    #: damals halten sollte. ``None`` heißt: noch nie ein Etikett erstellt.
+    last_baked_on: date | None = None
+    last_best_before: date | None = None
+
     @property
     def total_amount_g(self) -> float:
         """Summe aller eingewogenen Zutaten."""
@@ -419,6 +426,10 @@ class Recipe:
             "notes": self.notes,
             "created_at": self.created_at.isoformat(),
             "modified_at": self.modified_at.isoformat(),
+            "last_baked_on": self.last_baked_on.isoformat() if self.last_baked_on else None,
+            "last_best_before": (
+                self.last_best_before.isoformat() if self.last_best_before else None
+            ),
         }
 
     @classmethod
@@ -435,6 +446,8 @@ class Recipe:
             notes=str(data.get("notes") or ""),
             created_at=_parse_datetime(data.get("created_at")),
             modified_at=_parse_datetime(data.get("modified_at") or data.get("created_at")),
+            last_baked_on=_parse_date(data.get("last_baked_on")),
+            last_best_before=_parse_date(data.get("last_best_before")),
         )
 
 
