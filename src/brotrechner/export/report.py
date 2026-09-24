@@ -16,8 +16,8 @@ from typing import Any
 
 from brotrechner import __version__
 from brotrechner.core.analysis import RecipeAnalysis
-from brotrechner.core.nutrients import KCAL_TO_KJ
 from brotrechner.core.reference import reference_intake_percent, traffic_light
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.i18n import NUTRIENT_LABELS, format_number
 
 __all__ = ["ReportError", "is_available", "write_report"]
@@ -122,7 +122,9 @@ def write_report(
             "(8400 kJ / 2000 kcal, Anhang XIII VO (EU) Nr. 1169/2011). "
             "Ballaststoffe haben keine EU-Referenzmenge; verglichen wird mit dem "
             "DGE-Richtwert von 30 g je Tag. "
-            "Die Bandbreite folgt den Deklarationstoleranzen der EU-Guidance von 2012.",
+            "Die Werte je 100 g sind wie auf dem Etikett nach der Rundungsregel der "
+            "EU-Leitlinie von 2012 gerundet. Die ungerundete Bandbreite folgt den "
+            "Deklarationstoleranzen derselben Leitlinie.",
             small,
         ),
         Paragraph("Zutaten, Bäckerprozent und Kosten", h2),
@@ -227,7 +229,7 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
         value = getattr(nutrients, name)
         value_range = analysis.ranges_per_100g.get(name)
         if name == "energy_kcal":
-            shown = f"{value * KCAL_TO_KJ:.0f} kJ / {value:.0f} kcal"
+            shown = declare_energy(as_declarable(value))
             band = (
                 f"{value_range.minimum:.0f} - {value_range.maximum:.0f} kcal"
                 if value_range
@@ -235,7 +237,7 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
             )
         else:
             decimals = 2 if name == "salt" else 1
-            shown = f"{format_number(value, decimals)} g"
+            shown = declare_nutrient(name, as_declarable(value)).text
             band = (
                 f"{format_number(value_range.minimum, decimals)} - "
                 f"{format_number(value_range.maximum, decimals)} g"

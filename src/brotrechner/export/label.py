@@ -7,7 +7,9 @@ direkt auf der Festplatte, weshalb es keine Vorschau geben konnte.
 
 Aufbau und Reihenfolge der Nährwerttabelle folgen Anhang XV der VO (EU)
 Nr. 1169/2011: Energie (kJ und kcal), Fett, davon gesättigte Fettsäuren,
-Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz.
+Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz. Die
+Werte sind nach der Leitlinie der EU-Kommission gerundet
+(:mod:`brotrechner.core.rounding`).
 
 Preise erscheinen bewusst nie auf dem Etikett - es ist für verschenkte Brote
 gedacht.
@@ -23,7 +25,8 @@ from typing import Final
 
 from PIL import Image, ImageDraw
 
-from brotrechner.core.nutrients import KCAL_TO_KJ, Nutrients
+from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.export.fonts import Font, FontSet, load_font_set
 
 __all__ = ["LabelOptions", "LabelSize", "LabelTheme", "render_label"]
@@ -659,34 +662,23 @@ def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str
     Returns:
         Liste aus ``(Bezeichnung, Wert, eingerückt, hervorgehoben)``.
     """
-    kj = round(nutrients.energy_kcal * KCAL_TO_KJ)
     rows: list[tuple[str, str, bool, bool]] = [
-        ("Energie", f"{kj:.0f} kJ / {nutrients.energy_kcal:.0f} kcal", False, True),
-        ("Fett", _grams(nutrients.fat), False, False),
-        ("davon gesättigte Fettsäuren", _grams(nutrients.saturated_fat), True, False),
-        ("Kohlenhydrate", _grams(nutrients.carbs), False, False),
-        ("davon Zucker", _grams(nutrients.sugar), True, False),
+        ("Energie", declare_energy(as_declarable(nutrients.energy_kcal)), False, True),
+        ("Fett", _grams("fat", nutrients), False, False),
+        ("davon gesättigte Fettsäuren", _grams("saturated_fat", nutrients), True, False),
+        ("Kohlenhydrate", _grams("carbs", nutrients), False, False),
+        ("davon Zucker", _grams("sugar", nutrients), True, False),
     ]
     if show_fiber:
-        rows.append(("Ballaststoffe", _grams(nutrients.fiber), False, False))
-    rows.append(("Eiweiß", _grams(nutrients.protein), False, False))
-    rows.append(("Salz", _grams(nutrients.salt, decimals=2), False, False))
+        rows.append(("Ballaststoffe", _grams("fiber", nutrients), False, False))
+    rows.append(("Eiweiß", _grams("protein", nutrients), False, False))
+    rows.append(("Salz", _grams("salt", nutrients), False, False))
     return rows
 
 
-def _grams(value: float, *, decimals: int = 1) -> str:
-    """Formatiert einen Grammwert mit deutschem Dezimalkomma.
-
-    Werte unter 0,05 g werden nach den Rundungsregeln der EU-Guidance als
-    ``< 0,5 g`` bzw. ``0 g`` dargestellt.
-    """
-    if value <= 0:
-        return "0 g"
-    rounded = round(value, decimals)
-    if rounded == 0:
-        return "< 0,01 g" if decimals >= 2 else "< 0,1 g"
-    text = f"{rounded:.{decimals}f}".replace(".", ",")
-    return f"{text} g"
+def _grams(field_name: str, nutrients: Nutrients) -> str:
+    """Gerundete Angabe eines Nährstoffs nach der EU-Rundungsregel."""
+    return declare_nutrient(field_name, as_declarable(getattr(nutrients, field_name))).text
 
 
 def _format_weight(grams: float) -> str:

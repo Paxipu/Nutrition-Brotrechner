@@ -9,8 +9,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 
-from brotrechner.core.nutrients import KCAL_TO_KJ, Nutrients
+from brotrechner.core.nutrients import Nutrients
 from brotrechner.core.reference import reference_intake_percent, traffic_light
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.core.tolerances import ValueRange
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import AmpelDot, IntakeBar
@@ -114,6 +115,7 @@ class NutritionPanel(QWidget):
         """Setzt alle Zellen auf den Leerzustand."""
         for field in NUTRIENT_ORDER:
             self._value_labels[field].setText("-")
+            self._value_labels[field].setToolTip("")
             self._range_labels[field].setText("")
             self._dots[field].set_level(traffic_light(field, 0.0))
             self._bars[field].set_percent(None)
@@ -134,6 +136,9 @@ class NutritionPanel(QWidget):
         for field in NUTRIENT_ORDER:
             value = getattr(nutrients, field)
             self._value_labels[field].setText(_format_value(field, value))
+            self._value_labels[field].setToolTip(
+                f"Angabe auf dem Etikett: {declared(field, value)}"
+            )
 
             band = ranges.get(field)
             self._range_labels[field].setText(
@@ -153,10 +158,17 @@ class NutritionPanel(QWidget):
 
 
 def _format_value(field: str, value: float) -> str:
-    """Formatiert einen Nährwert samt Einheit."""
+    """Formatiert einen Nährwert samt Einheit - genauer als auf dem Etikett."""
     if field == "energy_kcal":
-        return f"{value * KCAL_TO_KJ:.0f} kJ / {value:.0f} kcal"
+        return declare_energy(as_declarable(value))
     return f"{format_number(value, decimals_for(field))} g"
+
+
+def declared(field: str, value: float) -> str:
+    """Die gerundete Angabe, wie sie auf dem Etikett steht."""
+    if field == "energy_kcal":
+        return declare_energy(as_declarable(value))
+    return declare_nutrient(field, as_declarable(value)).text
 
 
 def _format_range(field: str, band: ValueRange) -> str:

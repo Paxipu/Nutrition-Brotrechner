@@ -17,6 +17,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   66,7 % bei Lievito Madre (TA 150). Als Schüttwasser zählt nur das Wasser
   außerhalb dieses Anteils.
 
+- **Die Nährwerte auf dem Etikett waren nicht nach EU-Regel gerundet.** Jeder
+  Wert stand mit einer Nachkommastelle da, Salz mit zweien: 45,34 g
+  Kohlenhydrate als „45,3 g“ statt „45 g“, 0,43 g Zucker als „0,4 g“ statt
+  „< 0,5 g“, 1,234 g Salz als „1,23 g“ statt „1,2 g“. Etikett und PDF-Bericht
+  runden jetzt nach der Leitlinie der EU-Kommission von Dezember 2012,
+  kaufmännisch statt mit Pythons Rundung auf die gerade Zahl.
+
 ### Geändert
 
 - Im Zutatendialog ersetzt das Feld **„Mehlanteil“** das Ankreuzfeld „Zählt als
