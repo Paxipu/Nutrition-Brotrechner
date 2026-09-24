@@ -406,25 +406,26 @@ def _required_height(
     inner_width = width - 2 * (m.mm(5.0) + m.mm(2.0))
     total = 2 * (m.mm(5.0) + m.mm(2.0))
 
-    title = _wrap(draw, single_line(options.title), _font_title(fonts, m), inner_width)
-    total += max(1, len(title)) * m.scaled(5.6)
+    _, title, title_line = _title_layout(draw, options, fonts, m, inner_width)
+    total += max(1, len(title)) * title_line
 
     subtitle = single_line(options.subtitle)
     if subtitle:
         lines = _wrap(draw, subtitle, _font_subtitle(fonts, m), inner_width)
         total += m.scaled(0.6) + len(lines) * m.scaled(3.4)
 
-    dates = date_lines(options)
+    dates = _date_rows(draw, options, _font_small(fonts, m), inner_width)
     if dates:
         total += m.scaled(0.8) + len(dates) * m.scaled(3.4)
 
     total += m.scaled(1.6) + m.scaled(3.4)  # Trennlinie mit Abstand
 
-    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
-    total += m.scaled(4.6) + len(rows) * m.scaled(4.2) + m.scaled(3.0)
+    rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=inner_width)
+    total += m.scaled(4.6) + sum(row.height(m) for row in rows) + m.scaled(3.0)
 
     if options.net_weight_g > 0:
-        total += m.scaled(2.8) + m.scaled(6.0)
+        weight = _net_weight_lines(draw, options, fonts, m, inner_width)
+        total += m.scaled(2.8) + (len(weight) - 1) * m.scaled(4.4) + m.scaled(6.0)
 
     if _shows_ingredients(options):
         total += m.scaled(4.0)  # Überschrift
@@ -458,16 +459,110 @@ def _footer_height(
     if options.show_reference_hint:
         lines = _wrap(draw, _REFERENCE_HINT, _font_hint(fonts, m), inner_width)
         height += len(lines) * m.scaled(2.4)
-    if single_line(options.footer):
-        height += m.scaled(3.4)
-    return height
+    footer = _wrap(draw, single_line(options.footer), _font_small(fonts, m), inner_width)
+    return height + len(footer) * m.scaled(3.4)
+
+
+def _title_layout(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, fonts: FontSet, m: _Metrics, width: int
+) -> tuple[Font, list[str], int]:
+    """Schrift, Zeilen und Zeilenhöhe des Titels.
+
+    Ein Titel wird lieber etwas kleiner gesetzt als mitten im Wort getrennt -
+    "Roggenmischb / rot" war auf dem kleinen Etikett die Folge einer festen
+    Titelgröße. Die Schrift schrumpft, bis das längste Wort in die Zeile passt,
+    höchstens bis auf die Größe des Fließtexts. Erst darunter wird hart
+    getrennt.
+    """
+    text = single_line(options.title)
+    size = m.scaled(4.6)
+    line_height = m.scaled(5.6)
+    words = text.split(" ") if text else []
+
+    def widest(px: int) -> float:
+        font = fonts.get(px, bold=True)
+        return max(draw.textlength(word, font=font) for word in words)
+
+    if words and widest(size) > width:
+        floor = m.scaled(2.7)
+        size = max(floor, min(size - 1, int(size * width / widest(size))))
+        while size > floor and widest(size) > width:
+            size -= 1
+        line_height = round(size * 5.6 / 4.6)
+    font = fonts.get(size, bold=True)
+    return font, _wrap(draw, text, font, width), line_height
+
+
+def _date_rows(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, font: Font, width: int
+) -> list[str]:
+    """Datumszeilen, jede für sich auf die Breite umgebrochen."""
+    return [part for line in date_lines(options) for part in _wrap(draw, line, font, width)]
+
+
+@dataclass(frozen=True, slots=True)
+class _TableRow:
+    """Eine Zeile der Nährwerttabelle, auf die Breite des Etiketts gebracht.
+
+    Reicht die Breite nicht für Beschriftung und Wert nebeneinander, wird die
+    Beschriftung umbrochen - "davon gesättigte Fettsäuren" lief auf dem
+    kleinen Etikett sonst in ihren eigenen Wert hinein. Passt nicht einmal ein
+    einzelnes Wort neben den Wert, rückt der Wert in eine eigene Zeile.
+    """
+
+    label_lines: tuple[str, ...]
+    value: str
+    indented: bool
+    emphasised: bool
+    value_below: bool
+
+    def height(self, m: _Metrics) -> int:
+        extra = len(self.label_lines) - 1 + int(self.value_below)
+        return m.scaled(4.2) + extra * m.scaled(3.3)
+
+
+def _table_rows(
+    draw: ImageDraw.ImageDraw,
+    nutrients: Nutrients,
+    options: LabelOptions,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> list[_TableRow]:
+    """Die Zeilen der Nährwerttabelle samt Umbruch."""
+    rows: list[_TableRow] = []
+    for label, value, indented, emphasised in _nutrition_rows(
+        nutrients, show_fiber=options.show_fiber
+    ):
+        font = _font_body(fonts, m, bold=emphasised)
+        indent = m.scaled(3.0) if indented else 0
+        room = width - indent - m.scaled(2.0) - draw.textlength(value, font=font)
+        if draw.textlength(label, font=font) <= room:
+            lines, below = [label], False
+        elif all(draw.textlength(word, font=font) <= room for word in label.split(" ")):
+            lines, below = _wrap(draw, label, font, int(room)), False
+        else:
+            lines, below = _wrap(draw, label, font, width - indent), True
+        rows.append(_TableRow(tuple(lines), value, indented, emphasised, below))
+    return rows
+
+
+def _net_weight_lines(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, fonts: FontSet, m: _Metrics, width: int
+) -> list[str]:
+    """Nettogewicht in einer Zeile ("Nettogewicht 900 g") oder Wort und Menge untereinander.
+
+    Auf dem kleinen Etikett ragte "Nettogewicht 2,96 kg" über den Rand.
+    """
+    value = _format_weight(options.net_weight_g)
+    text = f"Nettogewicht {value}"
+    if draw.textlength(text, font=_font_weight(fonts, m)) <= width:
+        return [text]
+    return ["Nettogewicht", value]
 
 
 # ── Schriftgrößen ──────────────────────────────────────────────────────────
-
-
-def _font_title(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(4.6), bold=True)
 
 
 def _font_subtitle(fonts: FontSet, m: _Metrics) -> Font:
@@ -509,16 +604,16 @@ def _draw_head(
     top: int,
 ) -> int:
     """Titel, Untertitel, Datumszeilen und Trennlinie."""
-    y = _draw_wrapped_centered(
-        draw,
-        single_line(options.title),
-        font=_font_title(fonts, m),
-        colour=palette.accent,
-        left=left,
-        right=right,
-        top=top,
-        line_height=m.scaled(5.6),
-    )
+    title_font, title, title_line = _title_layout(draw, options, fonts, m, right - left)
+    centre = (left + right) // 2
+    y = top
+    # Alle Texte hängen an Ober- oder Unterlänge der Schrift ("a", "d"), nicht
+    # an ihrer Tinte ("t", "b"): Nur so stehen die Zeilen in gleichmäßigem
+    # Abstand, und Wert und Beschriftung einer Tabellenzeile teilen sich eine
+    # Grundlinie. Mit "rt" saßen die Werte sichtbar höher als ihre Beschriftung.
+    for line in title:
+        draw.text((centre, y), line, fill=palette.accent, font=title_font, anchor="ma")
+        y += title_line
 
     subtitle = single_line(options.subtitle)
     if subtitle:
@@ -533,13 +628,12 @@ def _draw_head(
             line_height=m.scaled(3.4),
         )
 
-    dates = date_lines(options)
+    font = _font_small(fonts, m)
+    dates = _date_rows(draw, options, font, right - left)
     if dates:
         y += m.scaled(0.8)
-        font = _font_small(fonts, m)
-        centre = (left + right) // 2
         for line in dates:
-            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mt")
+            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="ma")
             y += m.scaled(3.4)
 
     y += m.scaled(1.6)
@@ -563,27 +657,31 @@ def _draw_nutrition(
     draw.text((left, top), "Nährwerte je 100 g", fill=palette.accent, font=_font_section(fonts, m))
     y = top + m.scaled(4.6)
 
-    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
-    row_height = m.scaled(4.2)
+    rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=right - left)
     panel_top = y - m.scaled(1.2)
     draw.rectangle(
         [
             left - m.mm(1.5),
             panel_top,
             right + m.mm(1.5),
-            panel_top + len(rows) * row_height + m.scaled(2.4),
+            panel_top + sum(row.height(m) for row in rows) + m.scaled(2.4),
         ],
         fill=palette.panel,
     )
 
-    body = _font_body(fonts, m)
-    body_bold = _font_body(fonts, m, bold=True)
-    for label, value, indented, emphasised in rows:
-        font = body_bold if emphasised else body
-        colour = palette.muted if indented else palette.text
-        draw.text((left + (m.scaled(3.0) if indented else 0), y), label, fill=colour, font=font)
-        draw.text((right, y), value, fill=colour, font=font, anchor="rt")
-        y += row_height
+    for row in rows:
+        font = _font_body(fonts, m, bold=row.emphasised)
+        colour = palette.muted if row.indented else palette.text
+        x = left + (m.scaled(3.0) if row.indented else 0)
+        line_y = y
+        for index, text in enumerate(row.label_lines):
+            if index:
+                line_y += m.scaled(3.3)
+            draw.text((x, line_y), text, fill=colour, font=font)
+        if row.value_below:
+            line_y += m.scaled(3.3)
+        draw.text((right, line_y), row.value, fill=colour, font=font, anchor="ra")
+        y += row.height(m)
 
     return y + m.scaled(3.0)
 
@@ -604,13 +702,17 @@ def _draw_net_weight(
         return top
     draw.line([(left, top), (right, top)], fill=palette.rule, width=max(1, m.mm(0.25)))
     y = top + m.scaled(2.8)
-    draw.text(
-        ((left + right) // 2, y),
-        f"Nettogewicht {_format_weight(options.net_weight_g)}",
-        fill=palette.accent,
-        font=_font_weight(fonts, m),
-        anchor="mt",
-    )
+    lines = _net_weight_lines(draw, options, fonts, m, right - left)
+    for index, text in enumerate(lines):
+        if index:
+            y += m.scaled(4.4)
+        draw.text(
+            ((left + right) // 2, y),
+            text,
+            fill=palette.accent,
+            font=_font_weight(fonts, m),
+            anchor="ma",
+        )
     return y + m.scaled(6.0)
 
 
@@ -633,15 +735,15 @@ def _draw_footer(
     centre = (left + right) // 2
     y = bottom
 
-    footer = single_line(options.footer)
-    if footer:
-        draw.text((centre, y), footer, fill=palette.muted, font=_font_small(fonts, m), anchor="mb")
+    font = _font_small(fonts, m)
+    for line in reversed(_wrap(draw, single_line(options.footer), font, right - left)):
+        draw.text((centre, y), line, fill=palette.muted, font=font, anchor="md")
         y -= m.scaled(3.4)
 
     if options.show_reference_hint:
         font = _font_hint(fonts, m)
         for line in reversed(_wrap(draw, _REFERENCE_HINT, font, right - left)):
-            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mb")
+            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="md")
             y -= m.scaled(2.4)
 
     return y - m.scaled(2.0)
@@ -684,7 +786,12 @@ def _draw_ingredients(
         max_lines = max(1, available // line_height)
         if len(lines) > max_lines:
             lines = lines[:max_lines]
-            lines[-1] = [*lines[-1], [("…", False)]]
+            # Das Auslassungszeichen braucht Platz: Notfalls weicht das letzte
+            # Wort davor, sonst ragte die Zeile über den Rand.
+            last = [*lines[-1], [("…", False)]]
+            while len(last) > 1 and _line_width(draw, last, regular, bold) > width:
+                del last[-2]
+            lines[-1] = last
 
     for line in lines:
         # Allergene fett und in der kräftigeren Textfarbe: Sie sollen sich
@@ -871,7 +978,7 @@ def _draw_wrapped_centered(
     """Wie :func:`_draw_wrapped`, aber zentriert."""
     centre = (left + right) // 2
     for line in _wrap(draw, text, font, right - left):
-        draw.text((centre, top), line, fill=colour, font=font, anchor="mt")
+        draw.text((centre, top), line, fill=colour, font=font, anchor="ma")
         top += line_height
     return top
 

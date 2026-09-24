@@ -38,6 +38,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Programm. `NaN` rutschte dagegen durch jede Prüfung, weil jeder Vergleich
   damit falsch ist. Beides meldet die Prüfung jetzt als Fehler „keine Zahl“.
   Ein Eigenschaftstest setzt dafür beliebige Gleitkommawerte ein.
+- **Texte überlappten sich auf dem kleinen Etikett oder liefen über den
+  Rand.** Der Aufbau maß bisher nur die Höhe, nicht die Breite. Auf 54 mm
+  Breite lief „davon gesättigte Fettsäuren“ in den eigenen Wert, „Brennwert“
+  stieß an „996 kJ / 238 kcal“, „Nettogewicht 2,96 kg“ ragte über den Rand,
+  der Titel wurde mitten im Wort getrennt („Roggenmischb / rot“), eine lange
+  Fußzeile lief über beide Ränder, und das „…“ eines gekürzten
+  Zutatenverzeichnisses hing über den Rand hinaus. Jetzt bricht die
+  Beschriftung einer Tabellenzeile um (notfalls rückt der Wert in eine eigene
+  Zeile), der Titel wird kleiner statt getrennt, Nettogewicht, Datumszeilen
+  und Fußzeile brechen um. Außerdem stehen Wert und Beschriftung einer
+  Tabellenzeile jetzt auf derselben Grundlinie - die Werte saßen sichtbar
+  höher - und mehrzeilige Texte in gleichmäßigem Zeilenabstand. Ein Test
+  zeichnet jede Textausgabe auf und prüft Rand und Überdeckung für alle
+  Formate, ein Eigenschaftstest mit beliebig langen Texten.
 
 ### Hinzugefügt
 

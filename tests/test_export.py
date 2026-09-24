@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import csv
+import itertools
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Any, ClassVar
+from unittest import mock
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from brotrechner.core.analysis import ResolvedItem, analyze
 from brotrechner.core.models import Ingredient
@@ -58,6 +62,19 @@ BREAD = Nutrients(
 
 # Einmal geladen: die Schriftsuche durchläuft sonst je Beispiel das Dateisystem.
 FONTS = load_font_set()
+
+#: Wörter aus lateinischer Schrift, Ziffern und Satzzeichen - was auf einem
+#: Etikett stehen kann. Kombinierende Zeichen bleiben außen vor: Ihre Tinte
+#: reicht absichtlich über die eigene Box hinaus. Bis zu 40 Zeichen je Wort,
+#: damit auch Wörter vorkommen, die breiter als das Etikett sind.
+_WORD = st.text(
+    alphabet=st.characters(min_codepoint=0x21, max_codepoint=0x24F, categories=("L", "N", "P")),
+    min_size=1,
+    max_size=40,
+)
+
+#: Texte aus bis zu zwölf solchen Wörtern - lang genug, um umbrechen zu müssen.
+_LABEL_TEXT = st.lists(_WORD, max_size=12).map(" ".join)
 
 
 class TestLabelRendering:
@@ -269,6 +286,169 @@ class TestLabelLayout:
             draw, BREAD, options, fonts=FONTS, m=metrics, width=width, full_ingredients=True
         )
         assert needed <= height
+
+
+@dataclass(frozen=True)
+class _Drawn:
+    """Ein gezeichneter Text.
+
+    ``advance`` ist die Strecke, die der Text beim Setzen belegt, ``ink`` die
+    Box seiner Tinte. Die Tinte darf minimal über die Strecke hinausragen - bei
+    "À" oder "f" ist das so gewollt und kein Layoutfehler.
+    """
+
+    text: str
+    baseline: tuple[float, str]
+    advance: tuple[float, float]
+    ink: tuple[float, float, float, float]
+
+
+class _RecordingDraw(ImageDraw.ImageDraw):
+    """Zeichnet wie gewohnt und merkt sich jeden Text.
+
+    Geprüft wird damit, was tatsächlich auf dem Etikett landet - unabhängig
+    von der Rechnung, mit der das Layout den Platz vorab verteilt.
+    """
+
+    def __init__(self, image: Image.Image, mode: str | None = None) -> None:
+        super().__init__(image, mode)
+        self.texts: list[_Drawn] = []
+
+    def text(self, xy: Any, text: Any, *args: Any, **kwargs: Any) -> None:
+        font = kwargs.get("font")
+        anchor = kwargs.get("anchor") or "la"
+        x, y = xy
+        length = self.textlength(text, font=font)
+        start = {"l": x, "m": x - length / 2, "r": x - length}[anchor[0]]
+        ink = self.textbbox(xy, text, font=font, anchor=anchor)
+        self.texts.append(_Drawn(str(text), (y, anchor[1]), (start, start + length), ink))
+        super().text(xy, text, *args, **kwargs)
+
+
+def _drawn_texts(options: LabelOptions) -> list[_Drawn]:
+    """Rendert das Etikett und liefert jeden gezeichneten Text."""
+    recorders: list[_RecordingDraw] = []
+
+    def recording_draw(image: Image.Image, mode: str | None = None) -> _RecordingDraw:
+        recorders.append(_RecordingDraw(image, mode))
+        return recorders[-1]
+
+    with mock.patch.object(ImageDraw, "Draw", recording_draw):
+        render_label(BREAD, options, fonts=FONTS)
+    return [entry for recorder in recorders for entry in recorder.texts]
+
+
+def _layout_problems(options: LabelOptions, *, check_overlaps: bool = True) -> list[str]:
+    """Texte, die über den Innenrand ragen oder einander überdecken."""
+    texts = _drawn_texts(options)
+    pixels_per_mm = options.dpi / 25.4
+    left = round(5.0 * pixels_per_mm) + round(2.0 * pixels_per_mm)
+    right = options.pixel_size()[0] - left
+    # Tinte darf bis 0,5 mm in den Innenrand reichen - der Rahmen liegt 2,5 mm weiter außen.
+    ink_slack = 0.5 * pixels_per_mm
+    problems = [
+        f"{d.text!r} ragt über den Rand: {d.advance[0]:.0f}..{d.advance[1]:.0f} statt "
+        f"{left}..{right}"
+        for d in texts
+        if d.advance[0] < left - 1
+        or d.advance[1] > right + 1
+        or d.ink[0] < left - ink_slack
+        or d.ink[2] > right + ink_slack
+    ]
+    if check_overlaps:
+        for a, b in itertools.combinations(texts, 2):
+            if a.baseline == b.baseline:
+                # Dieselbe Zeile: Die Strecken dürfen sich nicht überschneiden.
+                overlap = min(a.advance[1], b.advance[1]) - max(a.advance[0], b.advance[0])
+                if overlap > 1:
+                    problems.append(f"{a.text!r} überdeckt {b.text!r}")
+                continue
+            # Verschiedene Zeilen: Die Tinte darf sich nicht berühren. Die
+            # Schrift rundet jede Glyphenkante auf ganze Pixel - bei 72 dpi und
+            # 8 Pixel Schrifthöhe sind das zusammen bis zu 2 Pixel.
+            overlap_x = min(a.ink[2], b.ink[2]) - max(a.ink[0], b.ink[0])
+            overlap_y = min(a.ink[3], b.ink[3]) - max(a.ink[1], b.ink[1])
+            if overlap_x > 1 and overlap_y > 2:
+                problems.append(f"{a.text!r} überdeckt {b.text!r}")
+    return problems
+
+
+class TestNothingOverlaps:
+    """Kein Text ragt über den Rand, keiner überdeckt einen anderen.
+
+    Auf dem kleinen Etikett lief "davon gesättigte Fettsäuren" in den eigenen
+    Wert, "Brennwert" stieß an "996 kJ / 238 kcal", "Nettogewicht 2,96 kg"
+    ragte über den Rand, und der Titel wurde mitten im Wort getrennt.
+    """
+
+    VARIANTS: ClassVar[dict[str, dict[str, object]]] = {
+        "knapp": {
+            "show_date": False,
+            "show_ingredients": False,
+            "show_reference_hint": False,
+            "footer": "",
+        },
+        "voll": {
+            "ingredients": LONG_INGREDIENTS,
+            "baked_on": date(2026, 8, 16),
+            "best_before": date(2026, 8, 23),
+        },
+        "viele Zutaten": {"ingredients": [f"Zutat Nummer {i}" for i in range(40)]},
+        "langer Titel": {
+            "title": "Dreikorn-Vollkornbrot mit Saaten und Sauerteig nach alter Art",
+            "subtitle": "Handgeformt, 48 Stunden Führung",
+            "footer": "Gebacken mit viel Zeit, Liebe und Mehl aus der Mühle nebenan",
+        },
+    }
+
+    @pytest.mark.parametrize("dpi", [110, 300])
+    @pytest.mark.parametrize("variant", list(VARIANTS))
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_every_format(self, size: LabelSize, variant: str, dpi: int) -> None:
+        values: dict[str, object] = {
+            "title": "Roggenmischbrot",
+            "size": size,
+            "dpi": dpi,
+            "net_weight_g": 2964,
+        }
+        values.update(self.VARIANTS[variant])
+        options = LabelOptions(**values)  # type: ignore[arg-type]
+        assert _layout_problems(options) == []
+
+    def test_the_title_is_not_split_inside_a_word(self) -> None:
+        options = LabelOptions(title="Roggenmischbrot", size=LabelSize.SMALL, dpi=200)
+        assert "Roggenmischbrot" in [drawn.text for drawn in _drawn_texts(options)]
+
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_value_and_label_share_a_baseline(self, size: LabelSize) -> None:
+        """Mit dem Anker "rt" saß jeder Wert sichtbar höher als seine Beschriftung."""
+        texts = _drawn_texts(LabelOptions(size=size, dpi=300))
+        for label, value in (("Fett", "1,6 g"), ("Eiweiß", "9,6 g"), ("Salz", "2,2 g")):
+            label_line = next(d for d in texts if d.text == label)
+            value_line = next(d for d in texts if d.text == value)
+            assert label_line.baseline == value_line.baseline, label
+
+    @given(
+        title=_LABEL_TEXT,
+        subtitle=_LABEL_TEXT,
+        footer=_LABEL_TEXT,
+        size=st.sampled_from(list(LabelSize)),
+        weight=st.floats(min_value=0.0, max_value=9999.0),
+    )
+    def test_no_text_leaves_the_label(
+        self, title: str, subtitle: str, footer: str, size: LabelSize, weight: float
+    ) -> None:
+        """Wie lang ein Text auch ist - er bricht um, statt über den Rand zu laufen."""
+        options = LabelOptions(
+            title=title,
+            subtitle=subtitle,
+            footer=footer,
+            size=size,
+            dpi=110,
+            net_weight_g=weight,
+            ingredients=LONG_INGREDIENTS,
+        )
+        assert _layout_problems(options, check_overlaps=False) == []
 
 
 class TestDateLines:
