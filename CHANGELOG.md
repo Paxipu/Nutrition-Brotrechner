@@ -24,6 +24,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   runden jetzt nach der Leitlinie der EU-Kommission von Dezember 2012,
   kaufmännisch statt mit Pythons Rundung auf die gerade Zahl.
 
+- **Eine einzige kaputte Zahl konnte die Datenprüfung abstürzen lassen.** Ein
+  Nährwert „unendlich“ - Pythons JSON-Leser akzeptiert ihn aus fremden
+  Importdateien - ließ die Prüfung mit `OverflowError` abbrechen; weil die
+  Statusleiste bei jeder Änderung die ganze Datenbank prüft, stand damit das
+  Programm. `NaN` rutschte dagegen durch jede Prüfung, weil jeder Vergleich
+  damit falsch ist. Beides meldet die Prüfung jetzt als Fehler „keine Zahl“.
+  Ein Eigenschaftstest setzt dafür beliebige Gleitkommawerte ein.
+
 ### Geändert
 
 - Im Zutatendialog ersetzt das Feld **„Mehlanteil“** das Ankreuzfeld „Zählt als
