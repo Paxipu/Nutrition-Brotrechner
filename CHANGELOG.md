@@ -24,6 +24,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   runden jetzt nach der Leitlinie der EU-Kommission von Dezember 2012,
   kaufmännisch statt mit Pythons Rundung auf die gerade Zahl.
 
+- **Die Spalte „Bandbreite“ zeigte nicht, was ihr Tooltip versprach.** Dort
+  stand die Summe der Toleranzen aller Zutaten, gewichtet nach Menge - nicht
+  die zulässige Abweichung des Brots, auf die sich die EU-Toleranzen beziehen.
+  Bei einem Weizenbrot ergab das ±5,3 g Kohlenhydrate statt ±8 g; reines Salz
+  ging mit ±20 % seines Gehalts ein, obwohl die eingewogene Menge genau bekannt
+  ist. Rechner und Bericht zeigen jetzt die Toleranz des fertigen Brots. Eine
+  Zutat mit negativem Wert ließ die alte Rechnung zudem abbrechen.
 - **Eine einzige kaputte Zahl konnte die Datenprüfung abstürzen lassen.** Ein
   Nährwert „unendlich“ - Pythons JSON-Leser akzeptiert ihn aus fremden
   Importdateien - ließ die Prüfung mit `OverflowError` abbrechen; weil die

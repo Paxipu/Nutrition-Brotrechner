@@ -48,6 +48,11 @@ class NutritionPanel(QWidget):
             label.setObjectName("Muted")
             if column in (1, 2):
                 label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if column == 2:
+                label.setToolTip(
+                    "Zulässige Abweichung eines Laborwerts des fertigen Brots\n"
+                    "(EU-Toleranzen, Leitlinie der Kommission von 2012)."
+                )
             grid.addWidget(label, 0, column)
 
         self._value_labels: dict[str, QLabel] = {}

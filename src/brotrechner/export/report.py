@@ -123,8 +123,9 @@ def write_report(
             "Ballaststoffe haben keine EU-Referenzmenge; verglichen wird mit dem "
             "DGE-Richtwert von 30 g je Tag. "
             "Die Werte je 100 g sind wie auf dem Etikett nach der Rundungsregel der "
-            "EU-Leitlinie von 2012 gerundet. Die ungerundete Bandbreite folgt den "
-            "Deklarationstoleranzen derselben Leitlinie.",
+            "EU-Leitlinie von 2012 gerundet. Die Bandbreite ist die zulässige "
+            "Abweichung eines Laborwerts des fertigen Brots nach den Toleranzen "
+            "derselben Leitlinie.",
             small,
         ),
         Paragraph("Zutaten, Bäckerprozent und Kosten", h2),

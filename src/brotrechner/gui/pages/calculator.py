@@ -251,8 +251,9 @@ class CalculatorPage(QWidget):
         self.chk_ranges = QCheckBox("Toleranzen")
         self.chk_ranges.setChecked(True)
         self.chk_ranges.setToolTip(
-            "Zeigt die Bandbreite, in der die Werte nach den EU-Deklarations-\n"
-            "toleranzen liegen dürfen (Guidance-Dokument der Kommission, 2012)."
+            "Zeigt, wie weit ein Laborwert des fertigen Brots von der Angabe\n"
+            "abweichen darf, ohne dass sie als falsch gilt - nach Tabelle 1 der\n"
+            "Leitlinie der EU-Kommission zu Toleranzen (Dezember 2012)."
         )
         nutrition_card.add_header_widget(self.chk_ranges)
         self.nutrition = NutritionPanel(self._tokens)

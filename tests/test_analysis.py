@@ -169,6 +169,52 @@ class TestNutrition:
         )
 
 
+class TestToleranceBands:
+    """Die Bandbreite ist die zulässige Abweichung des fertigen Brots.
+
+    Die EU-Toleranzen gelten für den angegebenen Wert des Lebensmittels, das
+    kontrolliert wird - hier also des Brots. Früher stand dort die Summe der
+    Toleranzen aller Zutaten, gewichtet nach ihrer Menge. Das ist eine andere
+    Größe: Bei einem Weizenbrot ergab sie ±5,3 g Kohlenhydrate statt ±8 g,
+    und reines Salz ging mit ±20 % seines Gehalts ein, obwohl die eingewogene
+    Salzmenge genau bekannt ist.
+    """
+
+    def test_the_band_is_the_tolerance_of_the_bread(self, basic: list[ResolvedItem]) -> None:
+        """40 g Kohlenhydrate je 100 g liegen im Band 10-40 g: ±20 % = ±8 g."""
+        result = analyze(basic, baked_weight_g=1500)
+        band = result.ranges_per_100g["carbs"]
+        assert band.value == pytest.approx(40.0)
+        assert band.minimum == pytest.approx(32.0)
+        assert band.maximum == pytest.approx(48.0)
+
+    def test_salt_follows_the_salt_rule_of_the_bread(self, basic: list[ResolvedItem]) -> None:
+        """1,34 g Salz je 100 g: ab 1,25 g gelten ±20 %."""
+        band = analyze(basic, baked_weight_g=1500).ranges_per_100g["salt"]
+        assert band.half_width == pytest.approx(band.value * 0.20)
+
+    def test_it_matches_the_tolerance_module(self, basic: list[ResolvedItem]) -> None:
+        from brotrechner.core.tolerances import nutrient_ranges
+
+        result = analyze(basic, baked_weight_g=1500)
+        assert result.ranges_per_100g == nutrient_ranges(result.per_100g)
+
+    def test_the_energy_band_contains_the_declared_value(self, basic: list[ResolvedItem]) -> None:
+        band = analyze(basic, baked_weight_g=1500).ranges_per_100g["energy_kcal"]
+        assert band.minimum <= band.value <= band.maximum
+
+    def test_no_bands_without_ingredients(self) -> None:
+        assert analyze([], baked_weight_g=500).ranges_per_100g == {}
+
+    def test_a_broken_ingredient_does_not_stop_the_analysis(self, flour: Ingredient) -> None:
+        """Ein negativer Wert ließ die alte Summenrechnung abbrechen."""
+        broken = Ingredient(name="Kaputt", nutrients=Nutrients(fat=-5.0, water=10.0))
+        result = analyze(
+            [ResolvedItem(flour, 500.0), ResolvedItem(broken, 50.0)], baked_weight_g=450
+        )
+        assert result.ranges_per_100g["fat"].value >= 0.0
+
+
 class TestCosts:
     def test_material_costs_add_up(self, basic: list[ResolvedItem]) -> None:
         result = analyze(basic, baked_weight_g=1500)

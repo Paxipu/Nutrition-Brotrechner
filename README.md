@@ -149,7 +149,7 @@ liegen. Was dabei passiert, steht in
 | **Brennwert** | Berechnet nach Anhang XIV VO (EU) Nr. 1169/2011: Kohlenhydrate 4, Eiweiß 4, Fett 9, **Ballaststoffe 2 kcal/g**. Der Ballaststoffanteil fehlt auf vielen Etiketten. |
 | **Kohlenhydrate** | Nach EU-Konvention **ohne** Ballaststoffe. Wer Werte aus US-Quellen übernimmt, muss die Ballaststoffe vorher abziehen. |
 | **Rundung** | Etikett und PDF-Bericht runden nach der Leitlinie der EU-Kommission von Dezember 2012: Brennwert auf ganze kJ/kcal; Fett, Kohlenhydrate, Zucker, Eiweiß und Ballaststoffe ab 10 g auf ganze Gramm, darunter auf 0,1 g und bis 0,5 g als „< 0,5 g“; Salz ab 1 g auf 0,1 g, darunter auf 0,01 g. Halbe werden aufgerundet. Der Rechner zeigt die genauen Werte, die Etikettangabe steht im Tooltip. |
-| **Toleranzen** | Tabelle 1 der EU-Guidance zu Deklarationstoleranzen, Dezember 2012. Für den Brennwert ist dort *keine* Toleranz definiert; er wird deshalb aus den Nährstoffgrenzen abgeleitet. |
+| **Toleranzen** | Tabelle 1 der EU-Guidance zu Deklarationstoleranzen, Dezember 2012, angewandt auf die Werte des **fertigen Brots** – so, wie eine Kontrolle sie prüft. Für den Brennwert ist dort *keine* Toleranz definiert; er wird deshalb aus den Nährstoffgrenzen abgeleitet. |
 | **Referenzmengen** | Anhang XIII Teil B VO (EU) Nr. 1169/2011 (8400 kJ / 2000 kcal). Ballaststoffe haben dort keine Referenzmenge – verglichen wird mit dem DGE-Richtwert von 30 g/Tag. |
 | **Ampel** | Keine EU-Vorgabe, sondern die Kriterien der britischen Front-of-Pack-Kennzeichnung. Im Programm entsprechend gekennzeichnet. |
 

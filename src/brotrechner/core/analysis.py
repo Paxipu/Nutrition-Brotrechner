@@ -36,8 +36,9 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from brotrechner.core.models import Ingredient, RecipeItem
-from brotrechner.core.nutrients import Nutrients
-from brotrechner.core.tolerances import TOLERANCE_FIELDS, ValueRange, nutrient_ranges
+from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients
+from brotrechner.core.rounding import as_declarable
+from brotrechner.core.tolerances import ValueRange, nutrient_ranges
 
 __all__ = [
     "DEFAULT_ENERGY_PRICE_EUR_PER_KWH",
@@ -138,7 +139,7 @@ class RecipeAnalysis:
     per_100g: Nutrients = field(default_factory=Nutrients)
     """Nährwerte je 100 g fertig gebackenes Brot."""
     ranges_per_100g: dict[str, ValueRange] = field(default_factory=dict)
-    """Deklarationsbandbreiten je 100 g gebacken."""
+    """Zulässige Abweichung der Angaben je 100 g gebacken (EU-Toleranzen)."""
 
     # Kosten
     material_cost: float = 0.0
@@ -298,7 +299,7 @@ def analyze(
         hydration_percent=water_mass / flour_mass * 100.0 if flour_mass > 0 else 0.0,
         total=total,
         per_100g=per_100g,
-        ranges_per_100g=_ranges_per_100g(items, scale, baked_weight_g, per_100g),
+        ranges_per_100g=_ranges_per_100g(per_100g, baked_weight_g=baked_weight_g),
         material_cost=material_cost,
         energy_cost=energy_cost,
         total_cost=total_cost,
@@ -308,51 +309,23 @@ def analyze(
     )
 
 
-def _ranges_per_100g(
-    items: list[ResolvedItem],
-    scale: float,
-    baked_weight_g: float,
-    per_100g: Nutrients,
-) -> dict[str, ValueRange]:
-    """Summiert die Toleranzen der Einzelzutaten zur Rezeptbandbreite.
+def _ranges_per_100g(per_100g: Nutrients, *, baked_weight_g: float) -> dict[str, ValueRange]:
+    """Zulässige Abweichung der Angaben je 100 g des fertigen Brots.
 
-    Die Toleranz gilt je Zutat und je 100 g Zutat; sie wird mit der jeweiligen
-    Menge gewichtet aufaddiert und anschließend auf 100 g Brot bezogen. Das ist
-    der konservative Fall, in dem alle Zutaten gleichzeitig am selben Rand ihrer
-    Toleranz liegen.
+    Die Toleranzen der EU-Leitlinie gelten für den angegebenen Wert des
+    Lebensmittels, das kontrolliert wird - hier also für das Brot, nicht für
+    seine Zutaten. Früher stand hier die mengengewichtete Summe der
+    Zutatentoleranzen; das ist eine andere Größe, die mit der Kontrolle eines
+    Brots nichts zu tun hat.
+
+    Negative oder nicht endliche Werte entstehen nur aus fehlerhaften Zutaten
+    (die Datenprüfung meldet sie); sie werden hier wie 0 behandelt, damit die
+    Auswertung nicht abbricht.
     """
-    if baked_weight_g <= 0 or not items:
+    if baked_weight_g <= 0:
         return {}
-
-    minima = dict.fromkeys(TOLERANCE_FIELDS, 0.0)
-    maxima = dict.fromkeys(TOLERANCE_FIELDS, 0.0)
-    for item in items:
-        ratio = item.amount_g * scale / 100.0
-        item_ranges = nutrient_ranges(item.ingredient.nutrients)
-        for name in TOLERANCE_FIELDS:
-            minima[name] += item_ranges[name].minimum * ratio
-            maxima[name] += item_ranges[name].maximum * ratio
-
-    factor = 100.0 / baked_weight_g
-    aggregated = Nutrients(**{name: minima[name] * factor for name in TOLERANCE_FIELDS})
-    aggregated_max = Nutrients(**{name: maxima[name] * factor for name in TOLERANCE_FIELDS})
-
-    ranges = {
-        name: ValueRange(
-            getattr(per_100g, name),
-            getattr(aggregated, name),
-            getattr(aggregated_max, name),
-        )
-        for name in TOLERANCE_FIELDS
-    }
-    # Brennwert konsistent aus den Nährstoffgrenzen ableiten (siehe tolerances).
-    energy_min = aggregated.computed_energy_kcal
-    energy_max = aggregated_max.computed_energy_kcal
-    declared = per_100g.energy_kcal
-    ranges["energy_kcal"] = ValueRange(
-        declared, max(0.0, min(energy_min, declared)), max(energy_max, declared)
-    )
-    return ranges
+    clean = Nutrients(**{name: as_declarable(getattr(per_100g, name)) for name in NUTRIENT_FIELDS})
+    return nutrient_ranges(clean)
 
 
 def _validate_inputs(
