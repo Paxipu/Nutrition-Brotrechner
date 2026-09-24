@@ -39,6 +39,17 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   damit falsch ist. Beides meldet die Prüfung jetzt als Fehler „keine Zahl“.
   Ein Eigenschaftstest setzt dafür beliebige Gleitkommawerte ein.
 
+### Hinzugefügt
+
+- **Plausibilitätsprüfung der Gewichte.** Ein Tippfehler beim Brotgewicht -
+  75 statt 750 g - ergab bisher ohne Warnung 2273 kcal je 100 g, mehr als
+  reines Fett haben kann, und landete so auf dem Etikett. Der Rechner meldet
+  jetzt unter „Backprozess“ ein Brot, das schwerer als sein Teig oder leichter
+  als die Trockenmasse der Zutaten ist, und mehr als 900 kcal je 100 g als
+  Fehler; einen Backverlust außerhalb von 5 bis 35 % und einen auffälligen
+  Rohteig als Warnung. Mit einem Fehler lässt sich kein Etikett speichern oder
+  drucken.
+
 ### Geändert
 
 - **„Brennwert“ statt „Energie“** auf dem Etikett, im Bericht, in der CSV und

@@ -23,6 +23,7 @@ Jetzt gilt:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from html import escape
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -49,6 +50,8 @@ from brotrechner.core.analysis import (
     analyze,
 )
 from brotrechner.core.models import Ingredient, Recipe, RecipeItem
+from brotrechner.core.plausibility import ProcessFinding, check_process, has_errors
+from brotrechner.core.validation import Severity
 from brotrechner.gui.models.recipe_model import RECIPE_COLUMNS, RecipeItemsModel
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card, StatCard
@@ -212,6 +215,14 @@ class CalculatorPage(QWidget):
             form.addWidget(widget, 1, column)
             form.setColumnStretch(column, 1)
         process_card.body.addLayout(form)
+
+        # Befunde der Plausibilitätsprüfung: Ein Tippfehler beim Brotgewicht
+        # verzerrt jede Angabe je 100 g und soll sofort auffallen.
+        self.lbl_process = QLabel()
+        self.lbl_process.setWordWrap(True)
+        self.lbl_process.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_process.setVisible(False)
+        process_card.add_widget(self.lbl_process)
         layout.addWidget(process_card)
 
         return container
@@ -446,8 +457,9 @@ class CalculatorPage(QWidget):
 
     def _render(self, analysis: RecipeAnalysis) -> None:
         """Überträgt die Auswertung in die rechte Spalte."""
+        findings = check_process(analysis)
         self._render_summary(analysis)
-        self._render_stats(analysis)
+        self._render_stats(analysis, findings)
 
         if analysis.is_empty or analysis.baked_weight_g <= 0:
             self.nutrition.clear()
@@ -456,6 +468,12 @@ class CalculatorPage(QWidget):
 
         self.lbl_baking.setText(_baking_text(analysis))
         self.lbl_cost.setText(_cost_html(analysis))
+        self._render_process(findings)
+
+    def _render_process(self, findings: Sequence[ProcessFinding]) -> None:
+        """Zeigt die Befunde der Plausibilitätsprüfung, ohne Befund nichts."""
+        self.lbl_process.setVisible(bool(findings))
+        self.lbl_process.setText(findings_html(findings, self._tokens))
 
     def _render_summary(self, analysis: RecipeAnalysis) -> None:
         if analysis.is_empty:
@@ -472,7 +490,7 @@ class CalculatorPage(QWidget):
             parts.append(f"Skalierung ×{analysis.scale_factor:.3f}")
         self.lbl_summary.setText("   ·   ".join(parts))
 
-    def _render_stats(self, analysis: RecipeAnalysis) -> None:
+    def _render_stats(self, analysis: RecipeAnalysis, findings: Sequence[ProcessFinding]) -> None:
         if analysis.is_empty or analysis.baked_weight_g <= 0:
             for card in (self.stat_energy, self.stat_weight, self.stat_yield, self.stat_cost):
                 card.set_value("—")
@@ -485,7 +503,9 @@ class CalculatorPage(QWidget):
         )
         self.stat_weight.set_value(
             f"{analysis.baked_weight_g:.0f} g",
-            f"Backverlust {analysis.water_loss_percent:.1f} %",
+            "⚠ unmöglich - siehe Backprozess"
+            if has_errors(findings)
+            else f"Backverlust {analysis.water_loss_percent:.1f} %",
         )
         yield_hint = (
             f"Hydration {analysis.hydration_percent:.0f} %"
@@ -497,6 +517,16 @@ class CalculatorPage(QWidget):
         )
         hint = "" if analysis.has_complete_prices else "unvollständig - Preise fehlen"
         self.stat_cost.set_value(format_currency(analysis.cost_per_kg), hint)
+
+
+def findings_html(findings: Sequence[ProcessFinding], tokens: Tokens) -> str:
+    """Befunde als farbige Liste: Fehler rot, Warnungen orange."""
+    items = "".join(
+        f"<li style='color:{tokens.danger if f.severity is Severity.ERROR else tokens.warning}'>"
+        f"{escape(f.message)}</li>"
+        for f in findings
+    )
+    return f"<ul style='margin:0; padding-left:14px'>{items}</ul>" if items else ""
 
 
 def _weight_spin(tooltip: str) -> QDoubleSpinBox:

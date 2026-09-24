@@ -28,7 +28,10 @@ bleibt erhalten.
 **Prüfen.** Eine eingebaute Plausibilitätsprüfung findet Datenfehler, bevor sie
 in einer Auswertung landen: verletzte Massenbilanz, ein Brennwert, der nicht zu
 den Nährstoffen passt, unmögliche Wassergehalte, Dubletten. Auch von der
-Kommandozeile aus, etwa in einer CI-Pipeline.
+Kommandozeile aus, etwa in einer CI-Pipeline. Ebenso fallen Gewichte auf, die
+nicht stimmen können – ein Brot, das schwerer ist als sein Teig oder leichter
+als die Trockenmasse der Zutaten. Mit einem solchen Tippfehler entsteht kein
+Etikett.
 
 **Verwalten.** Zutaten mit eigenem Herstellerfeld, Preisen samt Quelle und
 Preisstand, Preishistorie, Import und Export einzelner Zutaten als JSON,

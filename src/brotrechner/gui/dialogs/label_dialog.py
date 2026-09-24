@@ -38,6 +38,8 @@ from PySide6.QtWidgets import (
 )
 
 from brotrechner.core.analysis import RecipeAnalysis
+from brotrechner.core.plausibility import check_process
+from brotrechner.core.validation import Severity
 from brotrechner.export.label import LabelOptions, LabelSize, LabelTheme, render_label
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING
@@ -95,6 +97,9 @@ class LabelDialog(QDialog):
         self._analysis = analysis
         self._default_dir = default_dir
         self._last_baked_on = last_baked_on
+        # Mit einem unmöglichen Backgewicht stünden falsche Nährwerte auf dem
+        # Etikett. Solche Fehler sperren Speichern und Drucken.
+        self._process_findings = check_process(analysis)
         # Verhindert eine Rückkopplung: setPixmap ändert den Größenhinweis des
         # Labels, was ein resizeEvent auslösen kann, das erneut zeichnen würde.
         self._rendering = False
@@ -251,6 +256,17 @@ class LabelDialog(QDialog):
             content.add_widget(widget)
         side.addWidget(content)
         side.addStretch(1)
+
+        self.lbl_issues = QLabel()
+        self.lbl_issues.setWordWrap(True)
+        self.lbl_issues.setObjectName(
+            "Danger"
+            if any(f.severity is Severity.ERROR for f in self._process_findings)
+            else "Warning"
+        )
+        self.lbl_issues.setText("\n".join(f"• {f.message}" for f in self._process_findings))
+        self.lbl_issues.setVisible(bool(self._process_findings))
+        side.addWidget(self.lbl_issues)
 
         # Aktionen
         actions = QVBoxLayout()
@@ -447,7 +463,23 @@ class LabelDialog(QDialog):
         self._label_was_created = True
         return True
 
+    def _output_blocked(self) -> bool:
+        """Verweigert Speichern und Drucken, solange ein Fehler vorliegt."""
+        errors = [f for f in self._process_findings if f.severity is Severity.ERROR]
+        if not errors:
+            return False
+        QMessageBox.warning(
+            self,
+            "Etikett nicht erstellt",
+            "Mit diesen Angaben stünden falsche Nährwerte auf dem Etikett:\n\n"
+            + "\n".join(f"• {f.message}" for f in errors)
+            + "\n\nBitte die Gewichte im Rechner korrigieren.",
+        )
+        return True
+
     def _on_save(self) -> None:
+        if self._output_blocked():
+            return
         path = self._default_dir / self._suggested_name()
         if path.exists():
             answer = QMessageBox.question(
@@ -463,6 +495,8 @@ class LabelDialog(QDialog):
             QMessageBox.information(self, "Gespeichert", f"Etikett gespeichert:\n{path}")
 
     def _on_save_as(self) -> None:
+        if self._output_blocked():
+            return
         target, _ = QFileDialog.getSaveFileName(
             self,
             "Etikett speichern unter",
@@ -499,6 +533,8 @@ class LabelDialog(QDialog):
             painter.end()
 
     def _on_print(self) -> None:
+        if self._output_blocked():
+            return
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Etikett drucken")
