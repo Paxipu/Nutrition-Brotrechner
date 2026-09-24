@@ -38,6 +38,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from brotrechner import __version__
+from brotrechner.core.allergens import Allergen
 from brotrechner.core.models import Category, Ingredient, Source
 from brotrechner.core.nutrients import Nutrients, energy_from_macros
 from brotrechner.core.validation import Severity, validate_database
@@ -1427,6 +1428,134 @@ FLOUR_PERCENT: dict[str, float] = {
 }
 
 
+#: Bezeichnung im Zutatenverzeichnis und Allergene nach Anhang II, je Name.
+#: Hersteller-Varianten teilen den Eintrag ihres Namens.
+#:
+#: Allergene stehen in ``*Sternchen*`` und erscheinen auf dem Etikett fett.
+#: Zusammengesetzte Zutaten nennen ihre Bestandteile in Klammern (Anhang VII
+#: Teil E). ``None`` bei den Allergenen heißt "nicht erfasst": Dort hängt es
+#: vom gekauften Produkt ab - Margarine kann Milch oder Soja enthalten,
+#: Weinessig und getrocknete Früchte Sulfite. Solche Zutaten meldet die
+#: Prüfung, bis jemand die Packung angesehen hat.
+_W, _SP, _R, _BA, _OA = Allergen.WHEAT, Allergen.SPELT, Allergen.RYE, Allergen.BARLEY, Allergen.OATS
+_M, _E = Allergen.MILK, Allergen.EGGS
+LABELING: dict[str, tuple[str, frozenset[Allergen] | None]] = {
+    # Mehle
+    "Weizenmehl Type 405": ("*Weizen*mehl Type 405", frozenset({_W})),
+    "Weizenmehl Type 550": ("*Weizen*mehl Type 550", frozenset({_W})),
+    "Weizenmehl Type 1050": ("*Weizen*mehl Type 1050", frozenset({_W})),
+    "Weizenvollkornmehl": ("*Weizen*vollkornmehl", frozenset({_W})),
+    "Roggenmehl Type 997": ("*Roggen*mehl Type 997", frozenset({_R})),
+    "Roggenmehl Type 1150": ("*Roggen*mehl Type 1150", frozenset({_R})),
+    "Roggenmehl Type 1370": ("*Roggen*mehl Type 1370", frozenset({_R})),
+    "Roggenvollkornmehl": ("*Roggen*vollkornmehl", frozenset({_R})),
+    "Dinkelmehl Type 630": ("*Dinkel*mehl Type 630", frozenset({_SP})),
+    "Dinkelmehl Type 1050": ("*Dinkel*mehl Type 1050", frozenset({_SP})),
+    "Dinkelvollkornmehl": ("*Dinkel*vollkornmehl", frozenset({_SP})),
+    # Emmer und Einkorn sind Weizenarten ("Weizen (wie Dinkel ...)", Anhang II).
+    "Emmermehl Vollkorn": ("*Emmer*vollkornmehl", frozenset({_W})),
+    "Einkornmehl Vollkorn": ("*Einkorn*vollkornmehl", frozenset({_W})),
+    # Buchweizen ist kein Getreide und enthält kein Gluten.
+    "Buchweizenmehl": ("Buchweizenmehl", frozenset()),
+    "Maismehl": ("Maismehl", frozenset()),
+    "Reismehl": ("Reismehl", frozenset()),
+    "Kartoffelstärke": ("Kartoffelstärke", frozenset()),
+    # Saaten und Kerne
+    "Sonnenblumenkerne": ("Sonnenblumenkerne", frozenset()),
+    "Leinsamen": ("Leinsamen", frozenset()),
+    "Kürbiskerne": ("Kürbiskerne", frozenset()),
+    "Sesam": ("*Sesam*", frozenset({Allergen.SESAME})),
+    "Mohn (blau)": ("Blaumohn", frozenset()),
+    "Chiasamen": ("Chiasamen", frozenset()),
+    "Flohsamenschalen": ("Flohsamenschalen", frozenset()),
+    "Walnüsse": ("*Walnüsse*", frozenset({Allergen.WALNUTS})),
+    "Haselnüsse": ("*Haselnüsse*", frozenset({Allergen.HAZELNUTS})),
+    "Mandeln": ("*Mandeln*", frozenset({Allergen.ALMONDS})),
+    "Hanfsamen (geschält)": ("Hanfsamen, geschält", frozenset()),
+    # Getreide und Flocken
+    "Haferflocken": ("*Hafer*flocken", frozenset({_OA})),
+    "Haferflocken Großblatt": ("*Hafer*flocken", frozenset({_OA})),
+    "Haferkleie": ("*Hafer*kleie", frozenset({_OA})),
+    "Hafer (ganz)": ("*Hafer*körner", frozenset({_OA})),
+    "Weizenkleie": ("*Weizen*kleie", frozenset({_W})),
+    "Weizenkeime": ("*Weizen*keime", frozenset({_W})),
+    # Inaktives Backmalz ist handelsüblich Gerstenmalzmehl.
+    "Backmalz (inaktiv)": ("*Gersten*malzmehl", frozenset({_BA})),
+    # Grünkern ist unreif geernteter Dinkel.
+    "Grünkern": ("Grünkern (*Dinkel*)", frozenset({_SP})),
+    "Grünkern fränkisch": ("Grünkern (*Dinkel*)", frozenset({_SP})),
+    "Dinkel (ganz)": ("*Dinkel*körner", frozenset({_SP})),
+    "Amaranth": ("Amaranth", frozenset()),
+    "Hirse": ("Hirse", frozenset()),
+    "Quinoa": ("Quinoa", frozenset()),
+    # Triebmittel
+    "Hefe (frisch)": ("Hefe", frozenset()),
+    "Trockenhefe": ("Hefe", frozenset()),
+    "Sauerteig Anstellgut (Roggen)": (
+        "*Roggen*sauerteig (*Roggen*vollkornmehl, Wasser)",
+        frozenset({_R}),
+    ),
+    "Lievito Madre (Weizensauer)": ("*Weizen*sauerteig (*Weizen*mehl, Wasser)", frozenset({_W})),
+    "Backpulver": (
+        "Backpulver (Säuerungsmittel: Diphosphate; Backtriebmittel: Natriumcarbonate; Maisstärke)",
+        frozenset(),
+    ),
+    "Sauerteigpulver": ("*Roggen*sauerteig, getrocknet", frozenset({_R})),
+    # Grundzutaten
+    "Wasser": ("Wasser", frozenset()),
+    # Die Startdatenbank führt jodiertes Speisesalz; es heißt im Verzeichnis Jodsalz.
+    "Salz": ("Jodsalz", frozenset()),
+    "Zucker": ("Zucker", frozenset()),
+    "Honig": ("Honig", frozenset()),
+    "Rübenkraut": ("Zuckerrübensirup", frozenset()),
+    "Malzextrakt": ("*Gersten*malzextrakt", frozenset({_BA})),
+    # Fette und Öle
+    "Olivenöl": ("Olivenöl", frozenset()),
+    "Sonnenblumenöl": ("Sonnenblumenöl", frozenset()),
+    "Rapsöl": ("Rapsöl", frozenset()),
+    "Butter": ("*Butter*", frozenset({_M})),
+    "Kürbiskernöl": ("Kürbiskernöl", frozenset()),
+    "Kokosöl": ("Kokosöl", frozenset()),
+    "Margarine": ("Margarine", None),
+    "Butterschmalz": ("*Butterschmalz*", frozenset({_M})),
+    # Milchprodukte
+    "Milch (3,5%)": ("Voll*milch*", frozenset({_M})),
+    "Buttermilch": ("*Buttermilch*", frozenset({_M})),
+    "Joghurt (natur, 3,5%)": ("*Joghurt*", frozenset({_M})),
+    "Joghurt (1,5% Fett)": ("fettarmer *Joghurt*", frozenset({_M})),
+    "Joghurt (griechisch, 10%)": ("*Joghurt* nach griechischer Art", frozenset({_M})),
+    "Quark (Magerquark)": ("*Speisequark*, Magerstufe", frozenset({_M})),
+    "Schmand": ("*Schmand*", frozenset({_M})),
+    "Sahne": ("*Sahne*", frozenset({_M})),
+    "Skyr": ("*Skyr*", frozenset({_M})),
+    "Milchpulver (Vollmilch)": ("*Vollmilchpulver*", frozenset({_M})),
+    "Frischkäse (Doppelrahm)": ("*Frischkäse*, Doppelrahmstufe", frozenset({_M})),
+    "Crème fraîche": ("*Crème fraîche*", frozenset({_M})),
+    # Gewürze
+    "Brotgewürz (Mischung)": ("Gewürze (Koriander, Fenchel, Kümmel, Anis)", frozenset()),
+    "Kümmel": ("Kümmel", frozenset()),
+    "Koriandersamen": ("Koriander", frozenset()),
+    "Fenchelsamen": ("Fenchel", frozenset()),
+    "Anissamen": ("Anis", frozenset()),
+    "Schwarzkümmel (Nigella)": ("Schwarzkümmel", frozenset()),
+    # Sonstiges
+    "Ei": ("*Vollei*", frozenset({_E})),
+    "Apfel (frisch)": ("Äpfel", frozenset()),
+    "Kartoffel (gekocht)": ("Kartoffeln, gekocht", frozenset()),
+    "Gluten (Weizenkleber)": ("*Weizen*gluten", frozenset({_W})),
+    "Gluten rein": ("*Weizen*gluten", frozenset({_W})),
+    "Leinmehl (teilentölt)": ("Leinsamenmehl, teilentölt", frozenset()),
+    "Sojamehl": ("*Soja*mehl", frozenset({Allergen.SOY})),
+    "Essig": ("Essig", None),
+    "Rosinen": ("Rosinen", None),
+    "Cranberries (getrocknet)": ("getrocknete Cranberries", None),
+    "Feigen (getrocknet)": ("getrocknete Feigen", None),
+    "Altbrot (Paniermehl)": ("Paniermehl (*Weizen*mehl, Wasser, Salz, Hefe)", frozenset({_W})),
+    "Oliven (schwarz)": ("schwarze Oliven", None),
+    "Tomatenmark": ("Tomatenmark", frozenset()),
+}
+
+
 def build() -> list[Ingredient]:
     """Baut die Zutatenliste aus der Tabelle."""
     stand = date.fromisoformat(PRICE_DATE)
@@ -1446,6 +1575,8 @@ def build() -> list[Ingredient]:
                 nutrition_source=Source.REFERENCE,
                 water_source=Source.ESTIMATED,
                 notes=" ".join(filter(None, [note, f"Nährwertquelle: {nsrc}."])),
+                label_name=LABELING[name][0],
+                allergens=LABELING[name][1],
             )
         )
     return ingredients
@@ -1453,6 +1584,13 @@ def build() -> list[Ingredient]:
 
 def main() -> int:
     """Erzeugt die Datei und prüft sie sofort; Fehler brechen ab."""
+    # Jede Zutat braucht eine Bezeichnung für das Zutatenverzeichnis und eine
+    # Allergenangabe - eine vergessene fiele sonst erst auf dem Etikett auf.
+    without_labeling = {row[0] for row in TABLE} - set(LABELING)
+    if without_labeling:
+        print(f"FEHLER: Ohne Kennzeichnung: {sorted(without_labeling)}", file=sys.stderr)
+        return 1
+
     ingredients = build()
 
     keys = [i.key for i in ingredients]
@@ -1462,9 +1600,9 @@ def main() -> int:
         return 1
 
     # Ein Tippfehler im Namen würde den Mehlanteil sonst still ins Leere laufen lassen.
-    unknown = set(FLOUR_PERCENT) - {i.name for i in ingredients}
+    unknown = (set(FLOUR_PERCENT) | set(LABELING)) - {i.name for i in ingredients}
     if unknown:
-        print(f"FEHLER: Mehlanteil für unbekannte Zutaten: {sorted(unknown)}", file=sys.stderr)
+        print(f"FEHLER: Angaben zu unbekannten Zutaten: {sorted(unknown)}", file=sys.stderr)
         return 1
 
     findings = validate_database(ingredients)

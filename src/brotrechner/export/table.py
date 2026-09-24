@@ -11,6 +11,7 @@ import csv
 from collections.abc import Iterable
 from pathlib import Path
 
+from brotrechner.core.allergens import describe_allergens
 from brotrechner.core.analysis import RecipeAnalysis
 from brotrechner.core.models import Ingredient
 from brotrechner.i18n import format_number
@@ -37,6 +38,8 @@ INGREDIENT_COLUMNS: tuple[str, ...] = (
     "Preisquelle",
     "Preisstand",
     "Notiz",
+    "Bezeichnung im Zutatenverzeichnis",
+    "Allergene",
 )
 
 
@@ -80,6 +83,8 @@ def write_ingredients_csv(path: Path, ingredients: Iterable[Ingredient]) -> int:
                     ingredient.price_source,
                     ingredient.price_updated.isoformat() if ingredient.price_updated else "",
                     ingredient.notes,
+                    ingredient.label_name,
+                    describe_allergens(ingredient.allergens),
                 ]
             )
             rows += 1

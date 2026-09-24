@@ -25,7 +25,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Zählt nicht mehr als Mehl: Paniermehl ist bereits gebackenes Brot und gehört im Bäckerprozent nicht zur Mehlmenge. Die alte Namens-Heuristik hatte es wegen der Silbe 'mehl' als Mehl gewertet. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Paniermehl (*Weizen*mehl, Wasser, Salz, Hefe)",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Amaranth",
@@ -49,7 +53,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Amaranth",
+      "allergens": []
     },
     {
       "name": "Anissamen",
@@ -73,7 +79,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Anis",
+      "allergens": []
     },
     {
       "name": "Apfel (frisch)",
@@ -97,7 +105,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Äpfel",
+      "allergens": []
     },
     {
       "name": "Backmalz (inaktiv)",
@@ -121,7 +131,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Gersten*malzmehl",
+      "allergens": [
+        "barley"
+      ]
     },
     {
       "name": "Backpulver",
@@ -145,7 +159,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Werte nach Dr. Oetker Backin als Marktstandard. Formulierungen anderer Hersteller weichen im Salzgehalt deutlich ab. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Backpulver (Säuerungsmittel: Diphosphate; Backtriebmittel: Natriumcarbonate; Maisstärke)",
+      "allergens": []
     },
     {
       "name": "Brotgewürz (Mischung)",
@@ -169,7 +185,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Aus den Einzelgewürzen Koriander, Fenchel, Kümmel und Anis gemittelt; die alte Massenbilanz war nicht schlüssig. Nährwertquelle: berechnet aus der Rezeptur.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Gewürze (Koriander, Fenchel, Kümmel, Anis)",
+      "allergens": []
     },
     {
       "name": "Buchweizenmehl",
@@ -193,7 +211,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Buchweizenmehl",
+      "allergens": []
     },
     {
       "name": "Butter",
@@ -217,7 +237,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Butter*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Buttermilch",
@@ -241,7 +265,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Buttermilch*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Butterschmalz",
@@ -265,7 +293,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Butterschmalz*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Chiasamen",
@@ -289,7 +321,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Chiasamen",
+      "allergens": []
     },
     {
       "name": "Cranberries (getrocknet)",
@@ -313,7 +347,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "getrocknete Cranberries",
+      "allergens": null
     },
     {
       "name": "Crème fraîche",
@@ -337,7 +373,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Crème fraîche*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Dinkel (ganz)",
@@ -361,7 +401,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Massenbilanz lag vorher bei 103,2 g je 100 g. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*körner",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkel (ganz)",
@@ -385,7 +429,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*körner",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelmehl Type 1050",
@@ -409,7 +457,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*mehl Type 1050",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelmehl Type 630",
@@ -433,7 +485,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*mehl Type 630",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelmehl Type 630",
@@ -457,7 +513,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*mehl Type 630",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelmehl Type 630",
@@ -481,7 +541,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*mehl Type 630",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelvollkornmehl",
@@ -505,7 +569,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*vollkornmehl",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelvollkornmehl",
@@ -529,7 +597,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*vollkornmehl",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Dinkelvollkornmehl",
@@ -553,7 +625,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Dinkel*vollkornmehl",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Ei",
@@ -577,7 +653,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Packungsgröße = 10 Eier Größe M ohne Schale (je rund 50 g). Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Vollei*",
+      "allergens": [
+        "eggs"
+      ]
     },
     {
       "name": "Einkornmehl Vollkorn",
@@ -601,7 +681,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Einkorn*vollkornmehl",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Emmermehl Vollkorn",
@@ -625,7 +709,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Emmer*vollkornmehl",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Essig",
@@ -649,7 +737,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Essig",
+      "allergens": null
     },
     {
       "name": "Feigen (getrocknet)",
@@ -673,7 +763,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "getrocknete Feigen",
+      "allergens": null
     },
     {
       "name": "Fenchelsamen",
@@ -697,7 +789,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kohlenhydrate von 36,6 auf 12,5 g korrigiert; die Massenbilanz lag vorher bei 116,2 g je 100 g. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Fenchel",
+      "allergens": []
     },
     {
       "name": "Flohsamenschalen",
@@ -721,7 +815,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Brennwert von 21 auf 188 kcal korrigiert. Anhang XIV der VO (EU) 1169/2011 schreibt für Ballaststoffe 2 kcal/g vor; viele Etiketten lassen diesen Anteil weg. Nährwertquelle: berechnet aus der Rezeptur.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Flohsamenschalen",
+      "allergens": []
     },
     {
       "name": "Frischkäse (Doppelrahm)",
@@ -745,7 +841,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Frischkäse*, Doppelrahmstufe",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Gluten (Weizenkleber)",
@@ -769,7 +869,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*gluten",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Gluten rein",
@@ -793,7 +897,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*gluten",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Grünkern",
@@ -817,7 +925,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Grünkern (*Dinkel*)",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Grünkern fränkisch",
@@ -841,7 +953,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Grünkern (*Dinkel*)",
+      "allergens": [
+        "spelt"
+      ]
     },
     {
       "name": "Hafer (ganz)",
@@ -865,7 +981,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*körner",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Hafer (ganz)",
@@ -889,7 +1009,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*körner",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Haferflocken",
@@ -913,7 +1037,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kohlenhydrate von 63,3 auf 58,7 g und Wasser von 12 auf 10 % korrigiert; die Massenbilanz lag vorher bei 105,8 g je 100 g. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*flocken",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Haferflocken Großblatt",
@@ -937,7 +1065,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*flocken",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Haferkleie",
@@ -961,7 +1093,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Brennwert von 246 auf 367 kcal und Kohlenhydrate von 30 auf 50,8 g korrigiert. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*kleie",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Haferkleie",
@@ -985,7 +1121,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Hafer*kleie",
+      "allergens": [
+        "oats"
+      ]
     },
     {
       "name": "Hanfsamen (geschält)",
@@ -1009,7 +1149,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Hanfsamen, geschält",
+      "allergens": []
     },
     {
       "name": "Haselnüsse",
@@ -1033,7 +1175,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Haselnüsse*",
+      "allergens": [
+        "hazelnuts"
+      ]
     },
     {
       "name": "Hefe (frisch)",
@@ -1057,7 +1203,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Brennwert von 94 auf 105 kcal korrigiert; die alten Kohlenhydrate (2 g) passten nicht zum angegebenen Brennwert. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Hefe",
+      "allergens": []
     },
     {
       "name": "Hirse",
@@ -1081,7 +1229,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Hirse",
+      "allergens": []
     },
     {
       "name": "Honig",
@@ -1105,7 +1255,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Honig",
+      "allergens": []
     },
     {
       "name": "Joghurt (1,5% Fett)",
@@ -1129,7 +1281,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "fettarmer *Joghurt*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Joghurt (griechisch, 10%)",
@@ -1153,7 +1309,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Joghurt* nach griechischer Art",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Joghurt (natur, 3,5%)",
@@ -1177,7 +1337,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Joghurt*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Kartoffel (gekocht)",
@@ -1201,7 +1365,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kartoffeln, gekocht",
+      "allergens": []
     },
     {
       "name": "Kartoffelstärke",
@@ -1225,7 +1391,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kartoffelstärke ist stark hygroskopisch und hält handelsüblich 18-20 % Wasser. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kartoffelstärke",
+      "allergens": []
     },
     {
       "name": "Kokosöl",
@@ -1249,7 +1417,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kokosöl",
+      "allergens": []
     },
     {
       "name": "Koriandersamen",
@@ -1273,7 +1443,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Koriander",
+      "allergens": []
     },
     {
       "name": "Kümmel",
@@ -1297,7 +1469,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kohlenhydrate von 33,7 auf 11,9 g korrigiert; die Massenbilanz lag vorher bei 124 g je 100 g. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kümmel",
+      "allergens": []
     },
     {
       "name": "Kürbiskerne",
@@ -1321,7 +1495,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kohlenhydrate von 10,7 auf 4,7 g korrigiert: der alte Wert enthielt die Ballaststoffe noch (US-Konvention). Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kürbiskerne",
+      "allergens": []
     },
     {
       "name": "Kürbiskernöl",
@@ -1345,7 +1521,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "250 ml entsprechen rund 231 g (Dichte 0,925 g/ml). Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kürbiskernöl",
+      "allergens": []
     },
     {
       "name": "Kürbiskernöl",
@@ -1369,7 +1547,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "250 ml entsprechen rund 231 g (Dichte 0,925 g/ml). Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Kürbiskernöl",
+      "allergens": []
     },
     {
       "name": "Leinmehl (teilentölt)",
@@ -1393,7 +1573,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Leinsamenmehl, teilentölt",
+      "allergens": []
     },
     {
       "name": "Leinmehl (teilentölt)",
@@ -1417,7 +1599,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Leinsamenmehl, teilentölt",
+      "allergens": []
     },
     {
       "name": "Leinsamen",
@@ -1441,7 +1625,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Leinsamen",
+      "allergens": []
     },
     {
       "name": "Lievito Madre (Weizensauer)",
@@ -1465,7 +1651,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Neu berechnet für einen festen Weizensauer mit Teigausbeute 150 abzüglich rund 8 % Gärverlust. Nährwertquelle: berechnet aus der Rezeptur.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*sauerteig (*Weizen*mehl, Wasser)",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Maismehl",
@@ -1489,7 +1679,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Maismehl",
+      "allergens": []
     },
     {
       "name": "Malzextrakt",
@@ -1513,7 +1705,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Gersten*malzextrakt",
+      "allergens": [
+        "barley"
+      ]
     },
     {
       "name": "Mandeln",
@@ -1537,7 +1733,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Mandeln*",
+      "allergens": [
+        "almonds"
+      ]
     },
     {
       "name": "Margarine",
@@ -1561,7 +1761,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Margarine",
+      "allergens": null
     },
     {
       "name": "Milch (3,5%)",
@@ -1585,7 +1787,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "1 l entspricht rund 1030 g. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Voll*milch*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Milchpulver (Vollmilch)",
@@ -1609,7 +1815,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Vollmilchpulver*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Mohn (blau)",
@@ -1633,7 +1843,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Blaumohn",
+      "allergens": []
     },
     {
       "name": "Oliven (schwarz)",
@@ -1657,7 +1869,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Packungsgröße = Abtropfgewicht. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "schwarze Oliven",
+      "allergens": null
     },
     {
       "name": "Olivenöl",
@@ -1681,7 +1895,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "750 ml entsprechen rund 687 g (Dichte 0,916 g/ml). Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Olivenöl",
+      "allergens": []
     },
     {
       "name": "Quark (Magerquark)",
@@ -1705,7 +1921,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Speisequark*, Magerstufe",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Quinoa",
@@ -1729,7 +1949,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Quinoa",
+      "allergens": []
     },
     {
       "name": "Rapsöl",
@@ -1753,7 +1975,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "1 l entspricht rund 920 g (Dichte 0,92 g/ml). Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Rapsöl",
+      "allergens": []
     },
     {
       "name": "Reismehl",
@@ -1777,7 +2001,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Reismehl",
+      "allergens": []
     },
     {
       "name": "Roggenmehl Type 1150",
@@ -1801,7 +2027,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*mehl Type 1150",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenmehl Type 1370",
@@ -1825,7 +2055,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*mehl Type 1370",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenmehl Type 997",
@@ -1849,7 +2083,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*mehl Type 997",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenvollkornmehl",
@@ -1873,7 +2111,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Eiweiß korrigiert: 13 g war ein Wert für Weizen; Roggenvollkorn liegt bei 8-9 g. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*vollkornmehl",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenvollkornmehl",
@@ -1897,7 +2139,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*vollkornmehl",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenvollkornmehl",
@@ -1921,7 +2167,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*vollkornmehl",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Roggenvollkornmehl",
@@ -1945,7 +2195,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*vollkornmehl",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Rosinen",
@@ -1969,7 +2223,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Rosinen",
+      "allergens": null
     },
     {
       "name": "Rübenkraut",
@@ -1993,7 +2249,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Zuckerrübensirup",
+      "allergens": []
     },
     {
       "name": "Sahne",
@@ -2017,7 +2275,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Sahne*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Salz",
@@ -2041,7 +2303,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Günstigstes Speisesalz (jodiert), Discounter. Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Jodsalz",
+      "allergens": []
     },
     {
       "name": "Sauerteig Anstellgut (Roggen)",
@@ -2065,7 +2329,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Neu berechnet für Anstellgut mit Teigausbeute 200 (Mehl : Wasser = 1 : 1) abzüglich rund 8 % Gärverlust. Die alten Werte (63 kcal, 12 g KH) entsprachen keiner nachvollziehbaren Führung. Nährwertquelle: berechnet aus der Rezeptur.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*sauerteig (*Roggen*vollkornmehl, Wasser)",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Sauerteigpulver",
@@ -2089,7 +2357,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Roggen*sauerteig, getrocknet",
+      "allergens": [
+        "rye"
+      ]
     },
     {
       "name": "Schmand",
@@ -2113,7 +2385,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Schmand*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Schwarzkümmel (Nigella)",
@@ -2137,7 +2413,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Schwarzkümmel",
+      "allergens": []
     },
     {
       "name": "Sesam",
@@ -2161,7 +2439,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Sesam*",
+      "allergens": [
+        "sesame"
+      ]
     },
     {
       "name": "Skyr",
@@ -2185,7 +2467,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Skyr*",
+      "allergens": [
+        "milk"
+      ]
     },
     {
       "name": "Sojamehl",
@@ -2209,7 +2495,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Soja*mehl",
+      "allergens": [
+        "soy"
+      ]
     },
     {
       "name": "Sonnenblumenkerne",
@@ -2233,7 +2523,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Sonnenblumenkerne",
+      "allergens": []
     },
     {
       "name": "Sonnenblumenöl",
@@ -2257,7 +2549,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "1 l entspricht rund 920 g (Dichte 0,92 g/ml). Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Sonnenblumenöl",
+      "allergens": []
     },
     {
       "name": "Tomatenmark",
@@ -2281,7 +2575,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Tomatenmark",
+      "allergens": []
     },
     {
       "name": "Trockenhefe",
@@ -2305,7 +2601,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Hefe",
+      "allergens": []
     },
     {
       "name": "Walnüsse",
@@ -2329,7 +2627,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Walnüsse*",
+      "allergens": [
+        "walnuts"
+      ]
     },
     {
       "name": "Wasser",
@@ -2353,7 +2655,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Kosten je Liter inklusive Abwassergebühr. Nährwertquelle: berechnet aus der Rezeptur.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Wasser",
+      "allergens": []
     },
     {
       "name": "Weizenkeime",
@@ -2377,7 +2681,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Eiweiß von 32 auf 23,2 g korrigiert; die Massenbilanz lag vorher bei 107,9 g je 100 g. Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*keime",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenkleie",
@@ -2401,7 +2709,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: USDA FoodData Central, auf EU-Konvention umgerechnet.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*kleie",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenmehl Type 1050",
@@ -2425,7 +2737,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*mehl Type 1050",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenmehl Type 405",
@@ -2449,7 +2765,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*mehl Type 405",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenmehl Type 550",
@@ -2473,7 +2793,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*mehl Type 550",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenmehl Type 550",
@@ -2497,7 +2821,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*mehl Type 550",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenvollkornmehl",
@@ -2521,7 +2849,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*vollkornmehl",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Weizenvollkornmehl",
@@ -2545,7 +2877,11 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "*Weizen*vollkornmehl",
+      "allergens": [
+        "wheat"
+      ]
     },
     {
       "name": "Zucker",
@@ -2569,7 +2905,9 @@
       "nutrition_source": "reference",
       "water_source": "estimated",
       "notes": "Nährwertquelle: Handelsübliche deutsche Etikettwerte.",
-      "price_history": []
+      "price_history": [],
+      "label_name": "Zucker",
+      "allergens": []
     }
   ]
 }

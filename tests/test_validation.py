@@ -11,6 +11,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from brotrechner.core.allergens import Allergen
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.nutrients import Nutrients
 from brotrechner.core.validation import (
@@ -48,6 +49,10 @@ def clean_flour(**overrides: object) -> Ingredient:
         "flour_percent": 100.0,
         "package_price": 1.98,
         "package_size_g": 1000,
+        # Zu einer einwandfreien Zutat gehören erfasste Allergene samt
+        # Hervorhebung - ohne sie meldet die Prüfung einen Hinweis.
+        "label_name": "*Roggen*vollkornmehl",
+        "allergens": frozenset({Allergen.RYE}),
     }
     defaults.update(overrides)
     return Ingredient(**defaults)  # type: ignore[arg-type]
@@ -192,6 +197,7 @@ class TestNegativeAndExtremes:
             nutrients=Nutrients(salt=100.0),
             package_price=0.19,
             package_size_g=500,
+            allergens=frozenset(),
         )
         assert validate_ingredient(item) == []
 

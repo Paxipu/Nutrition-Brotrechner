@@ -13,6 +13,7 @@ Gegenüber der Vorversion kommen dazu:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from html import escape
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -31,6 +32,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from brotrechner.core.allergens import describe_allergens
+from brotrechner.core.labeling import list_runs
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.validation import Severity, validate_ingredient
 from brotrechner.gui.models.ingredient_model import (
@@ -291,6 +294,20 @@ def flour_share_text(percent: float) -> str:
     return ""
 
 
+def _labeling_html(ingredient: Ingredient, tokens: Tokens) -> str:
+    """Bezeichnung im Zutatenverzeichnis und Allergene."""
+    runs = "".join(
+        f"<b>{escape(run.text)}</b>" if run.bold else escape(run.text)
+        for run in list_runs(ingredient.list_name, ingredient.allergens)
+    )
+    allergens = describe_allergens(ingredient.allergens)
+    colour = tokens.warning if ingredient.allergens is None else tokens.text_muted
+    return (
+        f"<p style='margin-top:10px'><b>Zutatenverzeichnis</b><br>{runs}<br>"
+        f"<span style='color:{colour}'>Allergene: {allergens}</span></p>"
+    )
+
+
 def _detail_html(ingredient: Ingredient, tokens: Tokens) -> str:
     """Baut die Detailansicht einer Zutat."""
     n = ingredient.nutrients
@@ -312,6 +329,7 @@ def _detail_html(ingredient: Ingredient, tokens: Tokens) -> str:
         f"{ingredient.category.label}"
         f"{flour_share_text(ingredient.flour_percent)}</span>",
         f"<table width='100%' cellspacing='0' style='margin-top:8px'>{rows}</table>",
+        _labeling_html(ingredient, tokens),
     ]
 
     if ingredient.has_price:

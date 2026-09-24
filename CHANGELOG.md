@@ -41,6 +41,20 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Hinzugefügt
 
+- **Allergene und Bezeichnung im Zutatenverzeichnis je Zutat.** Für den
+  Verkauf müssen Allergene im Zutatenverzeichnis hervorgehoben sein
+  (Artikel 21 VO (EU) Nr. 1169/2011) - bisher kannte das Programm sie gar
+  nicht. Jede Zutat hat jetzt ihre Allergene nach Anhang II, Getreide und
+  Schalenfrüchte einzeln (eine „Enthält“-Angabe muss sie nennen), und eine
+  Bezeichnung, in der das Allergen in Sternchen steht: `*Weizen*mehl Type 550`,
+  `Roggensauerteig (*Roggen*vollkornmehl, Wasser)`. „Nicht erfasst“ ist dabei
+  etwas anderes als „keine“: Eine nie geprüfte Zutat gilt nicht als
+  allergenfrei. Die Startdatenbank bringt beides für alle 107 Zutaten mit;
+  Margarine, Essig, Trockenfrüchte und Oliven bleiben „nicht erfasst“, weil es
+  vom gekauften Produkt abhängt. Zutatendateien aus Version 5.1 übernehmen die
+  Angaben beim ersten Start aus der Startdatenbank. Der Zutatendialog ist dafür
+  zweispaltig; die Datenprüfung meldet nicht hervorgehobene Allergene und
+  Hervorhebungen ohne Allergen, die Zutatenliste und die CSV zeigen beides.
 - **Plausibilitätsprüfung der Gewichte.** Ein Tippfehler beim Brotgewicht -
   75 statt 750 g - ergab bisher ohne Warnung 2273 kcal je 100 g, mehr als
   reines Fett haben kann, und landete so auf dem Etikett. Der Rechner meldet

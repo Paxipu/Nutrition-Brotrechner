@@ -21,6 +21,7 @@ from PySide6.QtCore import (
     Qt,
 )
 
+from brotrechner.core.allergens import describe_allergens
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.validation import Severity, validate_ingredient
 from brotrechner.i18n import format_number
@@ -215,6 +216,7 @@ def _tooltip(ingredient: Ingredient, severity: Severity | None) -> str:
             lines.append(f"Preisquelle: {ingredient.price_source}")
     else:
         lines.append("kein Preis hinterlegt")
+    lines.append(f"Allergene: {describe_allergens(ingredient.allergens)}")
     if severity is not None:
         lines.append(f"<i>Datenprüfung: {severity.label}</i>")
     if ingredient.notes:

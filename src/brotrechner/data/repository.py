@@ -50,7 +50,7 @@ MAX_BACKUPS: Final = 10
 #: Zutatenfelder, die erst nach Version 5.1 hinzugekommen sind. Fehlen sie in
 #: einem Eintrag, hat ihn ein älteres Programm geschrieben; die Datenschicht
 #: kann sie dann aus der Startdatenbank ergänzen (siehe ``seed``).
-TRACKED_INGREDIENT_FIELDS: Final[tuple[str, ...]] = ("flour_percent",)
+TRACKED_INGREDIENT_FIELDS: Final[tuple[str, ...]] = ("flour_percent", "allergens")
 
 
 class RepositoryError(RuntimeError):

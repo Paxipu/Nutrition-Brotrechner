@@ -24,6 +24,12 @@ Code          Bedeutung
 ``price_missing``  Kein Preis hinterlegt.
 ``price_inconsistent``  Preis ohne Packungsgröße.
 ``name_manufacturer``  Herstellername steckt noch im Zutatennamen.
+``label_markup``  Nicht geschlossenes ``*`` in der Bezeichnung für das
+              Zutatenverzeichnis.
+``allergen_emphasis``  Allergene erfasst, aber in der Bezeichnung nicht
+              hervorgehoben.
+``emphasis_without_allergen``  Hervorhebung ohne erfasstes Allergen.
+``allergens_unknown``  Allergene nicht erfasst (Hinweis).
 ``duplicate``  Zwei Zutaten mit identischem Schlüssel.
 ============  ==============================================================
 """
@@ -38,6 +44,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+from brotrechner.core.allergens import Allergen
+from brotrechner.core.labeling import has_emphasis, has_unmatched_mark
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients, energy_from_macros
 
@@ -280,8 +288,63 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
                 f"Hersteller {text!r} steckt im Namen und gehört ins Hersteller-Feld",
             )
 
+    findings.extend(_labeling_findings(ingredient))
     findings.sort(key=lambda f: -f.severity.rank)
     return findings
+
+
+def _labeling_findings(ingredient: Ingredient) -> list[Finding]:
+    """Allergene und ihre Hervorhebung im Zutatenverzeichnis.
+
+    Ohne Hervorhebung druckt das Etikett die ganze Bezeichnung einer
+    allergenhaltigen Zutat fett - rechtlich ausreichend, aber es fällt auf und
+    soll deshalb bewusst so gewollt sein.
+    """
+
+    def finding(field: str, code: str, severity: Severity, message: str) -> Finding:
+        return Finding(ingredient.key, ingredient.display_name, field, code, severity, message)
+
+    label = ingredient.label_name
+    allergens = ingredient.allergens
+    if has_unmatched_mark(label):
+        return [
+            finding(
+                "label_name",
+                "label_markup",
+                Severity.ERROR,
+                f"Nicht geschlossenes Sternchen in der Bezeichnung {label!r}",
+            )
+        ]
+    if allergens is None:
+        return [
+            finding(
+                "allergens",
+                "allergens_unknown",
+                Severity.INFO,
+                "Allergene nicht erfasst - für ein Verkaufsetikett nötig",
+            )
+        ]
+    if allergens and not has_emphasis(label):
+        names = ", ".join(a.label for a in sorted(allergens, key=list(Allergen).index))
+        return [
+            finding(
+                "label_name",
+                "allergen_emphasis",
+                Severity.WARNING,
+                f"Enthält {names}, aber nichts ist in der Bezeichnung hervorgehoben "
+                f"(z. B. *Weizen*mehl); das Etikett druckt sie deshalb ganz fett",
+            )
+        ]
+    if not allergens and has_emphasis(label):
+        return [
+            finding(
+                "allergens",
+                "emphasis_without_allergen",
+                Severity.WARNING,
+                f"Hervorhebung in {label!r}, aber kein Allergen erfasst",
+            )
+        ]
+    return []
 
 
 def _non_finite_findings(ingredient: Ingredient) -> list[Finding]:

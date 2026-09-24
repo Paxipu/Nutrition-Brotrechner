@@ -166,8 +166,10 @@ def upgrade_from_seed(store: IngredientStore, missing_fields: dict[str, list[str
     Bis Version 5.1 gab es keinen Mehlanteil, nur "Mehl ja/nein". Ein
     Anstellgut stand deshalb mit 0 % in der Datei. Für Zutaten, die es in der
     Startdatenbank mit einem Mehlanteil zwischen 0 und 100 % gibt - also
-    Sauerteige und Vorteige -, wird dieser übernommen. Alles andere bleibt,
-    wie es war; insbesondere ein ausdrücklich gespeicherter Anteil.
+    Sauerteige und Vorteige -, wird dieser übernommen. Ebenso fehlten
+    Allergene und die Bezeichnung im Zutatenverzeichnis; beides kommt aus der
+    Startdatenbank, wo es die Zutat dort gibt. Alles andere bleibt, wie es
+    war - insbesondere ausdrücklich gespeicherte Werte.
 
     Args:
         store: Zutatendatenbank, die verändert wird.
@@ -176,8 +178,9 @@ def upgrade_from_seed(store: IngredientStore, missing_fields: dict[str, list[str
     Returns:
         Beschreibung der Ergänzungen, leer wenn nichts zu tun war.
     """
-    keys = missing_fields.get("flour_percent", [])
-    if not keys:
+    flour_keys = missing_fields.get("flour_percent", [])
+    allergen_keys = missing_fields.get("allergens", [])
+    if not flour_keys and not allergen_keys:
         return []
     try:
         seed = load_seed_ingredients()
@@ -185,18 +188,57 @@ def upgrade_from_seed(store: IngredientStore, missing_fields: dict[str, list[str
         log.warning("Startdatenbank nicht lesbar: %s", exc)
         return []
 
-    adopted = []
+    shares = [
+        own.display_name
+        for own, reference in _pairs(store, seed, flour_keys)
+        if _adopt_flour_share(own, reference)
+    ]
+    labeled = [
+        own.display_name
+        for own, reference in _pairs(store, seed, allergen_keys)
+        if _adopt_labeling(own, reference)
+    ]
+
+    notes = []
+    if shares:
+        notes.append(
+            "Mehlanteil von Sauerteigen und Vorteigen aus der Startdatenbank ergänzt: "
+            + ", ".join(sorted(shares))
+        )
+    if labeled:
+        notes.append(
+            f"Allergene und Bezeichnung im Zutatenverzeichnis für {len(labeled)} Zutaten aus "
+            f"der Startdatenbank übernommen. Eigene Zutaten bitte selbst ergänzen - sie "
+            f"gelten bis dahin als nicht erfasst."
+        )
+    return notes
+
+
+def _pairs(
+    store: IngredientStore, seed: IngredientStore, keys: list[str]
+) -> list[tuple[Ingredient, Ingredient]]:
+    """Eigene Zutat und Startdatenbank-Eintrag zu jedem Schlüssel, der in beiden steht."""
+    pairs = []
     for key in keys:
         own = store.get(key)
         reference = seed.get(key)
-        if own is not None and reference is not None and _adopt_flour_share(own, reference):
-            adopted.append(own.display_name)
-    if not adopted:
-        return []
-    return [
-        "Mehlanteil von Sauerteigen und Vorteigen aus der Startdatenbank ergänzt: "
-        + ", ".join(sorted(adopted))
-    ]
+        if own is not None and reference is not None:
+            pairs.append((own, reference))
+    return pairs
+
+
+def _adopt_labeling(own: Ingredient, reference: Ingredient) -> bool:
+    """Übernimmt Allergene und Bezeichnung, wenn die eigene Zutat keine hat.
+
+    Returns:
+        True, wenn etwas geändert wurde.
+    """
+    if own.allergens is not None or reference.allergens is None:
+        return False
+    own.allergens = reference.allergens
+    if not own.label_name:
+        own.label_name = reference.label_name
+    return True
 
 
 def _adopt_flour_share(own: Ingredient, reference: Ingredient) -> bool:
@@ -238,8 +280,8 @@ def merge_seed_into(store: IngredientStore) -> list[str]:
        werden die Nährwerte korrigiert.
     3. **Preise** werden ausschließlich dort eingetragen, wo bisher keiner
        stand. Ein selbst erfasster Preis wird nie überschrieben.
-    4. **Mehlanteil**: Das Altprogramm kannte ihn nicht. Sauerteige und
-       Vorteige bekommen den Anteil der Startdatenbank.
+    4. **Mehlanteil, Allergene und Bezeichnung im Zutatenverzeichnis**: Das
+       Altprogramm kannte sie nicht; sie kommen aus der Startdatenbank.
 
     Zutaten, die es in der Startdatenbank nicht gibt, bleiben unangetastet.
 
@@ -268,6 +310,7 @@ def merge_seed_into(store: IngredientStore) -> list[str]:
     corrections: list[str] = []
     prices = 0
     flour_shares = 0
+    labeled = 0
 
     for reference in seed:
         own = store.get(reference.key)
@@ -296,6 +339,8 @@ def merge_seed_into(store: IngredientStore) -> list[str]:
 
         if _adopt_flour_share(own, reference):
             flour_shares += 1
+        if _adopt_labeling(own, reference):
+            labeled += 1
 
     if adopted:
         notes.append(
@@ -306,6 +351,8 @@ def merge_seed_into(store: IngredientStore) -> list[str]:
         notes.append(f"Preise für {prices} weitere Zutaten ergänzt")
     if flour_shares:
         notes.append(f"Mehlanteil von Sauerteigen und Vorteigen ergänzt ({flour_shares})")
+    if labeled:
+        notes.append(f"Allergene für {labeled} selbst gepflegte Zutaten ergänzt")
     if corrections:
         notes.append(
             f"Nährwerte von {len(corrections)} selbst gepflegten Zutaten korrigiert, weil "

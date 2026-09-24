@@ -16,6 +16,7 @@ from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Final
 
+from brotrechner.core.allergens import Allergen, allergen_keys, parse_allergens
 from brotrechner.core.nutrients import Nutrients
 
 __all__ = [
@@ -184,6 +185,14 @@ class Ingredient:
     water_source: Source = Source.ESTIMATED
     notes: str = ""
 
+    #: Bezeichnung im Zutatenverzeichnis, Allergene in ``*Sternchen*``, etwa
+    #: ``*Weizen*mehl Type 550``. Leer heißt: der Name der Zutat.
+    label_name: str = ""
+
+    #: Enthaltene Allergene nach Anhang II. ``None`` heißt "nicht erfasst" -
+    #: das ist etwas anderes als "enthält keine" (leere Menge).
+    allergens: frozenset[Allergen] | None = None
+
     def __post_init__(self) -> None:
         """Normalisiert die Aufzählungsfelder.
 
@@ -207,6 +216,11 @@ class Ingredient:
     def display_name(self) -> str:
         """Name inklusive Hersteller, wie er in Listen erscheint."""
         return f"{self.name} ({self.manufacturer})" if self.manufacturer else self.name
+
+    @property
+    def list_name(self) -> str:
+        """Bezeichnung im Zutatenverzeichnis, ersatzweise der Name."""
+        return self.label_name.strip() or self.name
 
     # ── Mehlanteil ────────────────────────────────────────────────────────
 
@@ -301,6 +315,8 @@ class Ingredient:
                 "water_source": self.water_source.value,
                 "notes": self.notes,
                 "price_history": [e.to_dict() for e in self.price_history],
+                "label_name": self.label_name,
+                "allergens": None if self.allergens is None else allergen_keys(self.allergens),
             }
         )
         return data
@@ -329,6 +345,8 @@ class Ingredient:
             nutrition_source=Source.parse(data.get("nutrition_source")),
             water_source=Source.parse(data.get("water_source")),
             notes=str(data.get("notes") or ""),
+            label_name=str(data.get("label_name") or "").strip(),
+            allergens=parse_allergens(data.get("allergens")),
         )
 
     def copy(self, *, name: str | None = None, manufacturer: str | None = None) -> Ingredient:
@@ -347,6 +365,8 @@ class Ingredient:
             nutrition_source=self.nutrition_source,
             water_source=self.water_source,
             notes=self.notes,
+            label_name=self.label_name,
+            allergens=self.allergens,
         )
 
 
