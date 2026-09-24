@@ -1418,6 +1418,14 @@ TABLE: list[tuple[str, str, Category, bool, Nutrients, float, float, str, str, s
 ]
 # fmt: on
 
+#: Mehlanteil der Zutaten, die nur zum Teil aus Mehl bestehen. Er ergibt sich
+#: aus der Teigausbeute, mit der sie angesetzt sind: Mehlanteil = 100 / TA.
+#: Alle übrigen Zutaten zählen nach der Spalte "ist_mehl" zu 100 oder 0 %.
+FLOUR_PERCENT: dict[str, float] = {
+    "Sauerteig Anstellgut (Roggen)": 50.0,  # TA 200: Mehl und Wasser 1 : 1
+    "Lievito Madre (Weizensauer)": 66.7,  # TA 150: 100 g Mehl, 50 g Wasser
+}
+
 
 def build() -> list[Ingredient]:
     """Baut die Zutatenliste aus der Tabelle."""
@@ -1430,7 +1438,7 @@ def build() -> list[Ingredient]:
                 manufacturer=manufacturer,
                 category=category,
                 nutrients=nutrients,
-                is_flour=is_flour,
+                flour_percent=FLOUR_PERCENT.get(name, 100.0 if is_flour else 0.0),
                 package_price=price,
                 package_size_g=size,
                 price_source=psrc,
@@ -1451,6 +1459,12 @@ def main() -> int:
     duplicates = {k for k in keys if keys.count(k) > 1}
     if duplicates:
         print(f"FEHLER: doppelte Schlüssel: {sorted(duplicates)}", file=sys.stderr)
+        return 1
+
+    # Ein Tippfehler im Namen würde den Mehlanteil sonst still ins Leere laufen lassen.
+    unknown = set(FLOUR_PERCENT) - {i.name for i in ingredients}
+    if unknown:
+        print(f"FEHLER: Mehlanteil für unbekannte Zutaten: {sorted(unknown)}", file=sys.stderr)
         return 1
 
     findings = validate_database(ingredients)

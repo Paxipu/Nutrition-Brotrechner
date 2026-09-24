@@ -3,6 +3,33 @@
 Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unveröffentlicht]
+
+### Behoben
+
+- **Sauerteig und Vorteige verfälschten Teigausbeute und Bäckerprozent.** Eine
+  Zutat war bisher entweder Mehl oder keins. Ein Anstellgut aus gleichen Teilen
+  Mehl und Wasser zählte deshalb gar nicht zur Mehlmenge, sein Wasser aber
+  vollständig zum Schüttwasser - einschließlich der Eigenfeuchte des Mehls. Ein
+  Roggenbrot aus 400 g Mehl, 200 g Anstellgut, 250 g Wasser und 10 g Salz kam
+  so auf TA 191 und 2,5 % Salz statt auf TA 170 und 2,0 %. Jede Zutat hat jetzt
+  einen **Mehlanteil** in Prozent: 100 % bei Mehl, 50 % beim Anstellgut (TA 200),
+  66,7 % bei Lievito Madre (TA 150). Als Schüttwasser zählt nur das Wasser
+  außerhalb dieses Anteils.
+
+### Geändert
+
+- Im Zutatendialog ersetzt das Feld **„Mehlanteil“** das Ankreuzfeld „Zählt als
+  Mehl“. Ein Hinweis daneben nennt die Teigausbeute, der ein Anteil entspricht.
+- Zutatendateien aus Version 5.1 werden beim ersten Start ergänzt: Sauerteige
+  und Vorteige, die es in der Startdatenbank gibt, bekommen deren Mehlanteil.
+  Das Programm meldet die Ergänzung einmal. Ein ausdrücklich gespeicherter
+  Anteil wird nie verändert. Ältere Programmfassungen lesen die Dateien weiter:
+  Reines Mehl bleibt dort Mehl.
+- Die CSV-Ausgabe der Zutaten hat statt „Zählt als Mehl“ die Spalte
+  „Mehlanteil (%)“.
+- Die Datenprüfung meldet einen Mehlanteil außerhalb von 0 bis 100 % als Fehler.
+
 ## [5.1.0] – 2026-08-17
 
 ### Hinzugefügt

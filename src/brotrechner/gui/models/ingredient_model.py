@@ -199,6 +199,8 @@ def _tooltip(ingredient: Ingredient, severity: Severity | None) -> str:
     lines = [f"<b>{ingredient.display_name}</b>"]
     if ingredient.is_flour:
         lines.append("zählt beim Bäckerprozent als Mehl")
+    elif ingredient.flour_percent > 0:
+        lines.append(f"zählt zu {format_number(ingredient.flour_percent, 1)} % als Mehl")
     if ingredient.has_price:
         stand = (
             f", Stand {ingredient.price_updated.strftime('%d.%m.%Y')}"

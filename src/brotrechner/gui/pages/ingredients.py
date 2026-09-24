@@ -282,6 +282,15 @@ class IngredientsPage(QWidget):
         self.lbl_detail.setText(_detail_html(selected[0], self._tokens))
 
 
+def flour_share_text(percent: float) -> str:
+    """Zusatz für die Detailzeile: Zählt die Zutat (anteilig) als Mehl?"""
+    if percent >= 100.0:
+        return " · zählt als Mehl"
+    if percent > 0.0:
+        return f" · Mehlanteil {format_number(percent, 1)} %"
+    return ""
+
+
 def _detail_html(ingredient: Ingredient, tokens: Tokens) -> str:
     """Baut die Detailansicht einer Zutat."""
     n = ingredient.nutrients
@@ -301,7 +310,7 @@ def _detail_html(ingredient: Ingredient, tokens: Tokens) -> str:
         f"<span style='color:{tokens.text_muted}'>"
         f"{ingredient.manufacturer or 'ohne Herstellerangabe'} · "
         f"{ingredient.category.label}"
-        f"{' · zählt als Mehl' if ingredient.is_flour else ''}</span>",
+        f"{flour_share_text(ingredient.flour_percent)}</span>",
         f"<table width='100%' cellspacing='0' style='margin-top:8px'>{rows}</table>",
     ]
 

@@ -47,6 +47,11 @@ SCHEMA_VERSION: Final = 2
 #: Anzahl aufbewahrter Sicherungen je Datei.
 MAX_BACKUPS: Final = 10
 
+#: Zutatenfelder, die erst nach Version 5.1 hinzugekommen sind. Fehlen sie in
+#: einem Eintrag, hat ihn ein älteres Programm geschrieben; die Datenschicht
+#: kann sie dann aus der Startdatenbank ergänzen (siehe ``seed``).
+TRACKED_INGREDIENT_FIELDS: Final[tuple[str, ...]] = ("flour_percent",)
+
 
 class RepositoryError(RuntimeError):
     """Fehler beim Lesen oder Schreiben einer Datenbankdatei."""
@@ -60,6 +65,11 @@ class LoadResult:
     """True, wenn die Datei im Altformat vorlag und übersetzt wurde."""
     notes: list[str] = field(default_factory=list)
     """Meldungen zu übersprungenen oder zusammengeführten Einträgen."""
+    missing_fields: dict[str, list[str]] = field(default_factory=dict)
+    """Je Feld aus :data:`TRACKED_INGREDIENT_FIELDS` die Schlüssel der
+    Einträge, denen es in der Datei fehlte."""
+    upgrades: list[str] = field(default_factory=list)
+    """Ergänzungen aus der Startdatenbank, die der Anwender einmal sehen soll."""
 
 
 # ── Container ──────────────────────────────────────────────────────────────
@@ -331,9 +341,14 @@ def load_ingredients(path: Path) -> tuple[IngredientStore, LoadResult]:
             result.notes.append(f"Eintrag #{index} übersprungen: kein Objekt")
             continue
         try:
-            ingredients.append(Ingredient.from_dict(entry))
+            ingredient = Ingredient.from_dict(entry)
         except ValueError as exc:
             result.notes.append(f"Eintrag #{index} übersprungen: {exc}")
+            continue
+        ingredients.append(ingredient)
+        for name in TRACKED_INGREDIENT_FIELDS:
+            if name not in entry:
+                result.missing_fields.setdefault(name, []).append(ingredient.key)
 
     return IngredientStore(ingredients), result
 

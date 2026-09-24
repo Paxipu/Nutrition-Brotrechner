@@ -143,8 +143,8 @@ liegen. Was dabei passiert, steht in
 
 | Größe | Definition |
 |---|---|
-| **Bäckerprozent** | Jede Zutat relativ zur Gesamtmehlmenge, die per Definition 100 % ist. Was als Mehl zählt, ist je Zutat ein ausdrückliches Feld – keine Namensheuristik. |
-| **Teigausbeute (TA)** | `(Mehl + Schüttwasser) / Mehl × 100`. Als Schüttwasser zählt das *tatsächlich enthaltene* Wasser aller Nicht-Mehl-Zutaten: 100 g Milch steuern 87,5 g bei, nicht 100 g. |
+| **Bäckerprozent** | Jede Zutat relativ zur Gesamtmehlmenge, die per Definition 100 % ist. Zur Mehlmenge trägt jede Zutat mit ihrem **Mehlanteil** bei: Mehl mit 100 %, ein Anstellgut aus gleichen Teilen Mehl und Wasser (TA 200) mit 50 %. Der Anteil ist je Zutat ein ausdrückliches Feld – keine Namensheuristik. |
+| **Teigausbeute (TA)** | `(Mehl + Schüttwasser) / Mehl × 100`. Als Schüttwasser zählt das *tatsächlich enthaltene* Wasser außerhalb des Mehlanteils: 100 g Milch steuern 87,5 g bei, nicht 100 g; 200 g Anstellgut (TA 200) zählen als 100 g Mehl und 100 g Wasser. Die Eigenfeuchte des Mehls (13 %) gehört zum Mehl. |
 | **Hydration** | `Schüttwasser / Mehl × 100`, also stets `TA − 100`. |
 | **Brennwert** | Berechnet nach Anhang XIV VO (EU) Nr. 1169/2011: Kohlenhydrate 4, Eiweiß 4, Fett 9, **Ballaststoffe 2 kcal/g**. Der Ballaststoffanteil fehlt auf vielen Etiketten. |
 | **Kohlenhydrate** | Nach EU-Konvention **ohne** Ballaststoffe. Wer Werte aus US-Quellen übernimmt, muss die Ballaststoffe vorher abziehen. |

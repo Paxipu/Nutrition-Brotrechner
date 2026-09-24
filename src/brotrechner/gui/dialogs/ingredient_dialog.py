@@ -3,8 +3,8 @@
 Neu gegenüber der Vorversion:
 
 * **Hersteller als eigenes Feld** mit Vorschlagsliste aus dem Bestand.
-* **„Zählt als Mehl“** ist eine Ankreuzoption statt einer versteckten
-  Namensheuristik.
+* **Mehlanteil** in Prozent statt einer versteckten Namensheuristik: 100 %
+  bei Mehl, 50 % bei einem Anstellgut mit TA 200.
 * **Sofortige Plausibilitätsprüfung**: Unter den Eingaben steht laufend, ob
   Massenbilanz und Brennwert zusammenpassen - der Fehler fällt beim Eintippen
   auf und nicht erst Wochen später in der Auswertung.
@@ -19,7 +19,6 @@ from datetime import date
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QDateEdit,
     QDialog,
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -127,12 +127,22 @@ class IngredientDialog(QDialog):
             self.cmb_category.addItem(category.label, category)
         form.addRow("Kategorie", self.cmb_category)
 
-        self.chk_flour = QCheckBox("Zählt beim Bäckerprozent als Mehl")
-        self.chk_flour.setToolTip(
-            "Bestimmt, ob die Zutat zur Mehlmenge zählt, auf die sich Bäckerprozent\n"
-            "und Teigausbeute beziehen. Paniermehl etwa zählt nicht dazu."
+        self.spin_flour = QDoubleSpinBox()
+        self.spin_flour.setRange(0.0, 100.0)
+        self.spin_flour.setDecimals(1)
+        self.spin_flour.setSingleStep(5.0)
+        self.spin_flour.setSuffix(" %")
+        self.spin_flour.setToolTip(
+            "Anteil der Zutat, der beim Bäckerprozent und bei der Teigausbeute als\n"
+            "Mehl zählt: 100 % bei Mehl, 0 % bei Saaten, Milch oder Paniermehl.\n"
+            "Sauerteig und Vorteige: 100 / TA × 100 - also 50 % bei TA 200."
         )
-        form.addRow("", self.chk_flour)
+        self.lbl_flour_hint = QLabel()
+        self.lbl_flour_hint.setObjectName("Muted")
+        flour_row = QHBoxLayout()
+        flour_row.addWidget(self.spin_flour)
+        flour_row.addWidget(self.lbl_flour_hint, 1)
+        form.addRow("Mehlanteil", flour_row)
         base_card.body.addLayout(form)
         layout.addWidget(base_card)
 
@@ -236,6 +246,7 @@ class IngredientDialog(QDialog):
         self.txt_name.textChanged.connect(self._update_hints)
         self.cmb_manufacturer.currentTextChanged.connect(self._update_hints)
         self.cmb_category.currentIndexChanged.connect(self._update_hints)
+        self.spin_flour.valueChanged.connect(self._update_hints)
 
     # ── Befüllen und Auslesen ─────────────────────────────────────────────
 
@@ -245,7 +256,7 @@ class IngredientDialog(QDialog):
         index = self.cmb_category.findData(ingredient.category)
         if index >= 0:
             self.cmb_category.setCurrentIndex(index)
-        self.chk_flour.setChecked(ingredient.is_flour)
+        self.spin_flour.setValue(ingredient.flour_percent)
 
         for field, spin in self._spins.items():
             spin.setValue(float(getattr(ingredient.nutrients, field)))
@@ -269,7 +280,7 @@ class IngredientDialog(QDialog):
             manufacturer=self.cmb_manufacturer.currentText().strip(),
             category=category,
             nutrients=self._current_nutrients(),
-            is_flour=self.chk_flour.isChecked(),
+            flour_percent=self.spin_flour.value(),
             package_price=self.spin_price.value(),
             package_size_g=self.spin_size.value(),
             price_source=self.txt_price_source.text().strip(),
@@ -305,7 +316,7 @@ class IngredientDialog(QDialog):
         target.manufacturer = built.manufacturer
         target.category = built.category
         target.nutrients = built.nutrients
-        target.is_flour = built.is_flour
+        target.flour_percent = built.flour_percent
         target.notes = built.notes
         target.update_price(
             built.package_price,
@@ -318,7 +329,8 @@ class IngredientDialog(QDialog):
     # ── Rückmeldung ───────────────────────────────────────────────────────
 
     def _update_hints(self) -> None:
-        """Aktualisiert Brennwert-, Preis- und Befundzeile."""
+        """Aktualisiert Mehlanteil-, Brennwert-, Preis- und Befundzeile."""
+        self.lbl_flour_hint.setText(flour_share_hint(self.spin_flour.value()))
         nutrients = self._current_nutrients()
 
         computed = energy_from_macros(nutrients)
@@ -429,3 +441,17 @@ class IngredientDialog(QDialog):
                 return
 
         self.accept()
+
+
+def flour_share_hint(percent: float) -> str:
+    """Erklärt einen Mehlanteil in Bäckersprache.
+
+    Bei einem Teilanteil steht die Teigausbeute daneben, mit der ein Vorteig
+    aus Mehl und Wasser genau diesen Anteil hätte - das ist die Zahl, die man
+    aus dem Rezept kennt.
+    """
+    if percent <= 0.0:
+        return "zählt nicht als Mehl"
+    if percent >= 100.0:
+        return "zählt vollständig als Mehl"
+    return f"entspricht einem Vorteig mit TA {10_000.0 / percent:.0f}"

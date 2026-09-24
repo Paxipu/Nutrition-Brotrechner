@@ -244,7 +244,7 @@ class TestProperties:
             name="Mehl",
             category=Category.FLOUR,
             nutrients=Nutrients(energy_kcal=317, carbs=60, protein=8.5, fiber=14, water=13),
-            is_flour=True,
+            flour_percent=100.0,
             package_price=2.0,
             package_size_g=1000,
         )

@@ -19,8 +19,8 @@ from pathlib import Path
 
 from brotrechner import __version__, paths
 from brotrechner.core.validation import Severity, validate_database
-from brotrechner.data.repository import RepositoryError, load_ingredients, load_recipes
-from brotrechner.data.seed import ensure_user_database
+from brotrechner.data.repository import RepositoryError, load_recipes
+from brotrechner.data.seed import ensure_user_database, load_user_ingredients
 from brotrechner.export import table
 
 __all__ = ["main", "main_gui"]
@@ -97,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
             data_dir / paths.RECIPES_FILE,
             legacy_dir=Path.cwd(),
         )
-        ingredients, _ = load_ingredients(data_dir / paths.INGREDIENTS_FILE)
+        ingredients, _ = load_user_ingredients(data_dir / paths.INGREDIENTS_FILE)
         recipes, _ = load_recipes(data_dir / paths.RECIPES_FILE, ingredients)
     except RepositoryError as exc:
         print(f"Fehler: {exc}", file=sys.stderr)

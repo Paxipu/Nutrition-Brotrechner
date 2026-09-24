@@ -168,10 +168,11 @@ class Ingredient:
     manufacturer: str = ""
     nutrients: Nutrients = field(default_factory=Nutrients)
 
-    #: Zählt die Zutat bei Bäckerprozent und Teigausbeute als Mehl?
-    #: Früher wurde das über Namens-Schlüsselwörter geraten, was
-    #: "Altbrot (Paniermehl)" und "Sojamehl" fälschlich zu Mehl machte.
-    is_flour: bool = False
+    #: Anteil der Zutat in Prozent, der bei Bäckerprozent und Teigausbeute als
+    #: Mehl zählt: 100 bei Mehl, 0 bei Saaten oder Milch, 50 bei einem
+    #: Anstellgut aus gleichen Teilen Mehl und Wasser (TA 200). Früher gab es
+    #: nur "Mehl ja/nein", und Sauerteig zählte gar nicht zur Mehlmenge.
+    flour_percent: float = 0.0
 
     package_price: float = 0.0
     package_size_g: float = 0.0
@@ -206,6 +207,23 @@ class Ingredient:
     def display_name(self) -> str:
         """Name inklusive Hersteller, wie er in Listen erscheint."""
         return f"{self.name} ({self.manufacturer})" if self.manufacturer else self.name
+
+    # ── Mehlanteil ────────────────────────────────────────────────────────
+
+    @property
+    def is_flour(self) -> bool:
+        """True bei reinem Mehl, also einem Mehlanteil von 100 %."""
+        return self.flour_percent >= 100.0
+
+    @property
+    def flour_fraction(self) -> float:
+        """Mehlanteil als Bruch, auf 0 bis 1 begrenzt.
+
+        Ein unsinniger Wert in der Datei - etwa 140 % - meldet die Datenprüfung.
+        Die Rechnung selbst soll davon nicht ins Negative oder über die
+        Zutatenmenge hinaus getrieben werden.
+        """
+        return min(1.0, max(0.0, self.flour_percent / 100.0))
 
     # ── Preis ─────────────────────────────────────────────────────────────
 
@@ -267,6 +285,9 @@ class Ingredient:
             "name": self.name,
             "manufacturer": self.manufacturer,
             "category": self.category.value,
+            "flour_percent": self.flour_percent,
+            # Nur noch für Version 5.1 und älter, die den Mehlanteil nicht
+            # kennen: Reines Mehl bleibt dort Mehl, alles andere wie bisher.
             "is_flour": self.is_flour,
         }
         data.update(self.nutrients.to_dict())
@@ -299,7 +320,7 @@ class Ingredient:
             manufacturer=str(data.get("manufacturer") or "").strip(),
             category=Category.parse(data.get("category")),
             nutrients=Nutrients.from_dict(data),
-            is_flour=bool(data.get("is_flour", False)),
+            flour_percent=_flour_percent_from(data),
             package_price=_as_float(data.get("package_price")),
             package_size_g=_as_float(data.get("package_size_g")),
             price_history=[PriceEntry.from_dict(e) for e in data.get("price_history") or []],
@@ -317,7 +338,7 @@ class Ingredient:
             manufacturer=self.manufacturer if manufacturer is None else manufacturer,
             category=self.category,
             nutrients=self.nutrients,
-            is_flour=self.is_flour,
+            flour_percent=self.flour_percent,
             package_price=self.package_price,
             package_size_g=self.package_size_g,
             price_history=list(self.price_history),
@@ -462,6 +483,20 @@ def _as_float(value: object) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Zahlenwert erwartet, war {value!r}") from exc
+
+
+def _flour_percent_from(data: dict[str, Any]) -> float:
+    """Mehlanteil aus einem Zutateneintrag.
+
+    Dateien bis Version 5.1 kennen nur ``is_flour``. Daraus wird 100 oder 0 -
+    genau das Verhalten, mit dem diese Dateien entstanden sind. Ob eine solche
+    Zutat eigentlich ein Sauerteig ist, kann das Modell nicht wissen; das
+    ergänzt die Datenschicht beim Laden aus der Startdatenbank.
+    """
+    raw = data.get("flour_percent")
+    if raw is None or raw == "":
+        return 100.0 if bool(data.get("is_flour", False)) else 0.0
+    return _as_float(raw)
 
 
 def as_aware(moment: datetime) -> datetime:

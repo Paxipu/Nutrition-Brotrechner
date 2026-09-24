@@ -9,12 +9,14 @@ Fachliche Definitionen
 ----------------------
 
 **Bäckerprozent** - jede Zutat relativ zur Gesamtmehlmenge, die per Definition
-100 % ist. Als Mehl zählt, was in der Zutat ausdrücklich als Mehl markiert ist
-(:attr:`~brotrechner.core.models.Ingredient.is_flour`).
+100 % ist. Zur Mehlmenge trägt jede Zutat mit ihrem ausdrücklich hinterlegten
+Mehlanteil bei (:attr:`~brotrechner.core.models.Ingredient.flour_percent`):
+Mehl mit 100 %, ein Anstellgut aus gleichen Teilen Mehl und Wasser mit 50 %.
 
 **Teigausbeute (TA)** - ``(Mehl + Schüttwasser) / Mehl × 100``. Als Schüttwasser
-zählt hier das *tatsächlich enthaltene Wasser* aller Nicht-Mehl-Zutaten, also
-z. B. 87,5 g je 100 g Milch statt der vollen 100 g.
+zählt das *tatsächlich enthaltene Wasser* außerhalb des Mehlanteils, also
+z. B. 87,5 g je 100 g Milch statt der vollen 100 g. Die Eigenfeuchte des
+Mehlanteils gehört zum Mehl - bei reinem Mehl ebenso wie im Sauerteig.
 
 .. note::
    Die Vorgängerversion zählte jede Zutat mit mindestens 50 % Wassergehalt
@@ -39,15 +41,43 @@ from brotrechner.core.tolerances import TOLERANCE_FIELDS, ValueRange, nutrient_r
 
 __all__ = [
     "DEFAULT_ENERGY_PRICE_EUR_PER_KWH",
+    "FLOUR_MOISTURE_PERCENT",
     "IngredientLine",
     "RecipeAnalysis",
     "ResolvedItem",
+    "added_water_percent",
     "analyze",
     "resolve_items",
 ]
 
 #: Vorbelegung Strompreis; frei änderbar in der Oberfläche.
 DEFAULT_ENERGY_PRICE_EUR_PER_KWH: Final = 0.35
+
+#: Eigenfeuchte von Mehl in Prozent (handelsüblich 12-15 %). Steckt Mehl in
+#: einer Zutat wie einem Sauerteig, gehört dieses Wasser zum Mehlanteil und
+#: nicht zum Schüttwasser. Mit demselben Wert sind die Sauerteige der
+#: Startdatenbank berechnet: 100 g Mehl und 100 g Wasser ergeben 113 g Wasser
+#: auf 200 g, also die dort hinterlegten 56,5 %.
+FLOUR_MOISTURE_PERCENT: Final = 13.0
+
+
+def added_water_percent(ingredient: Ingredient) -> float:
+    """Schüttwasser je 100 g Zutat.
+
+    Das ist das enthaltene Wasser ohne die Eigenfeuchte des Mehlanteils. Es
+    kann weder negativ werden (trockener Vorteig) noch größer sein als der Teil
+    der Zutat, der kein Mehl ist - bei reinem Mehl also immer 0, gleich wie
+    feucht es ist.
+
+    Args:
+        ingredient: Zutat mit Wassergehalt und Mehlanteil.
+
+    Returns:
+        Schüttwasser in Gramm je 100 g Zutat.
+    """
+    flour = ingredient.flour_fraction * 100.0
+    free_water = ingredient.nutrients.water - flour * FLOUR_MOISTURE_PERCENT / 100.0
+    return min(max(0.0, free_water), 100.0 - flour)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,14 +249,10 @@ def analyze(
     effective_dough = dough_weight_g if dough_weight_g > 0 else weighed
     scale = effective_dough / weighed if weighed > 0 else 1.0
 
-    flour_mass = sum(i.amount_g * scale for i in items if i.ingredient.is_flour)
-    # Schüttwasser: nur das Wasser der Nicht-Mehl-Zutaten. Die Eigenfeuchte des
-    # Mehls steckt bereits in der Mehlmenge, mit der die TA definiert ist.
-    water_mass = sum(
-        i.amount_g * scale * i.ingredient.nutrients.water / 100.0
-        for i in items
-        if not i.ingredient.is_flour
-    )
+    flour_mass = sum(i.amount_g * scale * i.ingredient.flour_fraction for i in items)
+    # Schüttwasser: nur das Wasser außerhalb des Mehlanteils. Die Eigenfeuchte
+    # des Mehls steckt bereits in der Mehlmenge, mit der die TA definiert ist.
+    water_mass = sum(i.amount_g * scale * added_water_percent(i.ingredient) / 100.0 for i in items)
 
     total = Nutrients()
     material_cost = 0.0

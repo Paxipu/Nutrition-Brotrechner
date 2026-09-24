@@ -56,7 +56,7 @@ def flour() -> Ingredient:
             fiber=14.0,
             water=13.0,
         ),
-        is_flour=True,
+        flour_percent=100.0,
         package_price=1.98,
         package_size_g=1000,
     )

@@ -19,6 +19,7 @@ Code          Bedeutung
 ``energy``    Brennwert passt nicht zu den Makronährstoffen (Anhang XIV).
 ``water``     Wassergehalt außerhalb des für die Kategorie plausiblen Bereichs.
 ``salt_range``  Salzgehalt über 100 g/100 g.
+``flour_range``  Mehlanteil außerhalb von 0 bis 100 %.
 ``price_missing``  Kein Preis hinterlegt.
 ``price_inconsistent``  Preis ohne Packungsgröße.
 ``name_manufacturer``  Herstellername steckt noch im Zutatennamen.
@@ -217,6 +218,15 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
 
     if n.water > 100.0:
         add("water", "water", Severity.ERROR, f"Wassergehalt über 100 % ({n.water:g})", 100.0)
+
+    if not 0.0 <= ingredient.flour_percent <= 100.0:
+        add(
+            "flour_percent",
+            "flour_range",
+            Severity.ERROR,
+            f"Mehlanteil {ingredient.flour_percent:g} % liegt außerhalb von 0 bis 100 %",
+            min(100.0, max(0.0, ingredient.flour_percent)),
+        )
 
     mass = n.mass_sum
     if mass > _MASS_BALANCE_LIMIT:

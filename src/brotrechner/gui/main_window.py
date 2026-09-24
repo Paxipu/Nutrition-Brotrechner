@@ -39,12 +39,11 @@ from brotrechner.data.repository import (
     IngredientStore,
     RecipeStore,
     RepositoryError,
-    load_ingredients,
     load_recipes,
     save_ingredients,
     save_recipes,
 )
-from brotrechner.data.seed import ensure_user_database
+from brotrechner.data.seed import ensure_user_database, load_user_ingredients
 from brotrechner.export import report, table
 from brotrechner.gui.dialogs.ingredient_dialog import IngredientDialog
 from brotrechner.gui.dialogs.label_dialog import LabelDialog
@@ -269,7 +268,7 @@ class MainWindow(QMainWindow):
                 self._recipes_path,
                 legacy_dir=Path.cwd(),
             )
-            self._ingredients, ingredient_result = load_ingredients(self._ingredients_path)
+            self._ingredients, ingredient_result = load_user_ingredients(self._ingredients_path)
             self._recipes, recipe_result = load_recipes(self._recipes_path, self._ingredients)
         except RepositoryError as exc:
             QMessageBox.critical(
@@ -295,7 +294,16 @@ class MainWindow(QMainWindow):
                 + f"\n\nDie Daten liegen ab jetzt in\n{self._data_dir}\n\n"
                 "Die alten Dateien bleiben unverändert liegen.",
             )
-        elif notes:
+        elif ingredient_result.upgrades:
+            # Einmalig nach einem Update: Die Ergänzungen verändern die
+            # Auswertung gespeicherter Rezepte, das soll nicht unbemerkt bleiben.
+            QMessageBox.information(
+                self,
+                "Zutatendatenbank ergänzt",
+                "Beim Laden wurde die Zutatendatenbank auf den neuen Stand gebracht:\n\n"
+                + "\n".join(f"• {note}" for note in ingredient_result.upgrades),
+            )
+        if notes and not seed.imported_from_legacy:
             log.info("Hinweise beim Laden: %s", notes)
 
         self._flash(f"{len(self._ingredients)} Zutaten, {len(self._recipes)} Rezepte geladen")

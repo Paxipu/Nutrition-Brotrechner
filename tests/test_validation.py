@@ -45,7 +45,7 @@ def clean_flour(**overrides: object) -> Ingredient:
         "name": "Roggenvollkornmehl",
         "category": Category.FLOUR,
         "nutrients": nutrients,
-        "is_flour": True,
+        "flour_percent": 100.0,
         "package_price": 1.98,
         "package_size_g": 1000,
     }
