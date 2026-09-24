@@ -63,12 +63,14 @@ BREAD = Nutrients(
 # Einmal geladen: die Schriftsuche durchläuft sonst je Beispiel das Dateisystem.
 FONTS = load_font_set()
 
-#: Wörter aus lateinischer Schrift, Ziffern und Satzzeichen - was auf einem
-#: Etikett stehen kann. Kombinierende Zeichen bleiben außen vor: Ihre Tinte
-#: reicht absichtlich über die eigene Box hinaus. Bis zu 40 Zeichen je Wort,
+#: Wörter aus westeuropäischer Schrift (Latin-1), Ziffern und Satzzeichen -
+#: was auf einem Etikett stehen kann. Außen vor bleiben kombinierende Zeichen
+#: und übereinander gestapelte Akzente wie in "Ȫ": Deren Tinte reicht über die
+#: Oberlänge der Schrift hinaus und darf die Unterlänge der Zeile darüber
+#: berühren - das ist bei jedem Zeilenabstand so. Bis zu 40 Zeichen je Wort,
 #: damit auch Wörter vorkommen, die breiter als das Etikett sind.
 _WORD = st.text(
-    alphabet=st.characters(min_codepoint=0x21, max_codepoint=0x24F, categories=("L", "N", "P")),
+    alphabet=st.characters(min_codepoint=0x21, max_codepoint=0xFF, categories=("L", "N", "P")),
     min_size=1,
     max_size=40,
 )
@@ -303,39 +305,33 @@ class _Drawn:
     ink: tuple[float, float, float, float]
 
 
-class _RecordingDraw(ImageDraw.ImageDraw):
-    """Zeichnet wie gewohnt und merkt sich jeden Text.
+def _drawn_texts(options: LabelOptions) -> list[_Drawn]:
+    """Rendert das Etikett und liefert jeden gezeichneten Text.
 
-    Geprüft wird damit, was tatsächlich auf dem Etikett landet - unabhängig
-    von der Rechnung, mit der das Layout den Platz vorab verteilt.
+    Aufgezeichnet wird an ``ImageDraw.text`` selbst - dort kommt jeder Text
+    vorbei, gleich über welches Zeichenobjekt. Geprüft wird damit, was
+    tatsächlich auf dem Etikett landet, unabhängig von der Rechnung, mit der
+    das Layout den Platz vorab verteilt.
     """
+    texts: list[_Drawn] = []
+    original = ImageDraw.ImageDraw.text
 
-    def __init__(self, image: Image.Image, mode: str | None = None) -> None:
-        super().__init__(image, mode)
-        self.texts: list[_Drawn] = []
-
-    def text(self, xy: Any, text: Any, *args: Any, **kwargs: Any) -> None:
+    def recording_text(
+        self: ImageDraw.ImageDraw, xy: Any, text: Any, *args: Any, **kwargs: Any
+    ) -> None:
         font = kwargs.get("font")
         anchor = kwargs.get("anchor") or "la"
         x, y = xy
         length = self.textlength(text, font=font)
         start = {"l": x, "m": x - length / 2, "r": x - length}[anchor[0]]
         ink = self.textbbox(xy, text, font=font, anchor=anchor)
-        self.texts.append(_Drawn(str(text), (y, anchor[1]), (start, start + length), ink))
-        super().text(xy, text, *args, **kwargs)
+        texts.append(_Drawn(str(text), (y, anchor[1]), (start, start + length), ink))
+        original(self, xy, text, *args, **kwargs)
 
-
-def _drawn_texts(options: LabelOptions) -> list[_Drawn]:
-    """Rendert das Etikett und liefert jeden gezeichneten Text."""
-    recorders: list[_RecordingDraw] = []
-
-    def recording_draw(image: Image.Image, mode: str | None = None) -> _RecordingDraw:
-        recorders.append(_RecordingDraw(image, mode))
-        return recorders[-1]
-
-    with mock.patch.object(ImageDraw, "Draw", recording_draw):
+    with mock.patch.object(ImageDraw.ImageDraw, "text", recording_text):
         render_label(BREAD, options, fonts=FONTS)
-    return [entry for recorder in recorders for entry in recorder.texts]
+    assert texts, "Nichts aufgezeichnet - die Prüfung liefe ins Leere"
+    return texts
 
 
 def _layout_problems(options: LabelOptions, *, check_overlaps: bool = True) -> list[str]:
@@ -399,6 +395,16 @@ class TestNothingOverlaps:
             "subtitle": "Handgeformt, 48 Stunden Führung",
             "footer": "Gebacken mit viel Zeit, Liebe und Mehl aus der Mühle nebenan",
         },
+        # Passt auf dem kleinen Format nicht: Der Fuß rückt dann unter das
+        # vollständige Verzeichnis, statt es zu überdecken.
+        "Verkauf": {
+            "for_sale": True,
+            "producer": "Backstube Muster\nHauptstraße 1\n12345 Musterstadt",
+            "storage_hint": "Trocken und bei Raumtemperatur lagern.",
+            "ingredients": LONG_INGREDIENTS,
+            "baked_on": date(2026, 8, 16),
+            "best_before": date(2026, 8, 23),
+        },
     }
 
     @pytest.mark.parametrize("dpi", [110, 300])
@@ -432,13 +438,27 @@ class TestNothingOverlaps:
         title=_LABEL_TEXT,
         subtitle=_LABEL_TEXT,
         footer=_LABEL_TEXT,
+        producer=_LABEL_TEXT,
         size=st.sampled_from(list(LabelSize)),
         weight=st.floats(min_value=0.0, max_value=9999.0),
+        for_sale=st.booleans(),
     )
-    def test_no_text_leaves_the_label(
-        self, title: str, subtitle: str, footer: str, size: LabelSize, weight: float
+    def test_no_text_leaves_the_label_or_covers_another(
+        self,
+        *,
+        title: str,
+        subtitle: str,
+        footer: str,
+        producer: str,
+        size: LabelSize,
+        weight: float,
+        for_sale: bool,
     ) -> None:
-        """Wie lang ein Text auch ist - er bricht um, statt über den Rand zu laufen."""
+        """Wie lang ein Text auch ist - er bricht um, statt über den Rand zu laufen.
+
+        Und passt der Inhalt nicht, rückt der Fuß nach unten, statt ihn zu
+        überdecken.
+        """
         options = LabelOptions(
             title=title,
             subtitle=subtitle,
@@ -447,8 +467,10 @@ class TestNothingOverlaps:
             dpi=110,
             net_weight_g=weight,
             ingredients=LONG_INGREDIENTS,
+            for_sale=for_sale,
+            producer=producer,
         )
-        assert _layout_problems(options, check_overlaps=False) == []
+        assert _layout_problems(options) == []
 
 
 class TestDateLines:

@@ -86,6 +86,21 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Fehler; einen Backverlust außerhalb von 5 bis 35 % und einen auffälligen
   Rohteig als Warnung. Mit einem Fehler lässt sich kein Etikett speichern oder
   drucken.
+- **Etikett für den Verkauf.** Ein Schalter im Etikettdialog prüft laufend die
+  Pflichtangaben für verpackt verkauftes Brot nach Artikel 9 VO (EU)
+  Nr. 1169/2011: Bezeichnung, Zutatenverzeichnis, erfasste Allergene,
+  Nettogewicht, Mindesthaltbarkeitsdatum (nicht vor dem Backtag) sowie Name
+  und Anschrift des Herstellers, die neu auf dem Etikett stehen können - dazu
+  ein Aufbewahrungshinweis. Im Verkaufsmodus hat jede Schrift mindestens
+  1,2 mm x-Höhe (Artikel 13 Abs. 2, Anhang IV), gemessen an der Tinte der
+  tatsächlich gezeichneten Schrift; die Ziffern des Nettogewichts erreichen die
+  Mindesthöhe nach Fertigpackungsverordnung (bis 50 g 2 mm, bis 200 g 3 mm,
+  bis 1 kg 4 mm, darüber 6 mm), und das Zutatenverzeichnis wird nicht mehr
+  zugunsten der Schriftgröße gekürzt. Passt der Inhalt nicht, rückt der Fuß
+  unter das Verzeichnis, statt es zu überdecken, und der Dialog nennt Abhilfe.
+  Geprüft wird in Druckauflösung; offene Punkte stehen unter den
+  Einstellungen, Speichern und Drucken fragen dann nach. Die Einstellungen des
+  Dialogs liegen dafür in einem Rollbereich.
 
 ### Geändert
 

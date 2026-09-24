@@ -9,6 +9,10 @@ geändert wird. Erst danach entscheidet man, was damit geschehen soll:
 * **Speichern unter …** öffnet einen Dateidialog,
 * **Drucken …** geht direkt in den Druckdialog des Systems - Umweg über eine
   Datei entfällt.
+
+Mit „Etikett für den Verkauf“ prüft der Dialog laufend die Pflichtangaben und
+das gezeichnete Etikett. Offene Punkte stehen unter den Einstellungen;
+Speichern und Drucken fragen dann nach.
 """
 
 from __future__ import annotations
@@ -27,11 +31,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -40,8 +47,17 @@ from PySide6.QtWidgets import (
 from brotrechner.core.analysis import RecipeAnalysis
 from brotrechner.core.labeling import IngredientList, build_ingredient_list, contains_statement
 from brotrechner.core.plausibility import check_process
+from brotrechner.core.sales import SaleIssue, check_sale
 from brotrechner.core.validation import Severity
-from brotrechner.export.label import LabelOptions, LabelSize, LabelTheme, render_label
+from brotrechner.export.fonts import load_font_set
+from brotrechner.export.label import (
+    LabelOptions,
+    LabelReport,
+    LabelSize,
+    LabelTheme,
+    render_and_measure,
+    render_label,
+)
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
@@ -56,8 +72,10 @@ _DPI_CHOICES: tuple[tuple[str, int], ...] = (
     ("600 dpi - Etikettendrucker", 600),
 )
 
-#: Auflösung der Bildschirmvorschau. Bewusst niedrig, damit das Neuzeichnen
-#: bei jeder Änderung sofort wirkt.
+#: Ungefähre Auflösung der Bildschirmvorschau. Gezeichnet wird in der
+#: Ausgabeauflösung - nur so stimmt die Prüfung mit dem Druck überein - und
+#: das Bild dann ganzzahlig auf etwa diese Auflösung verkleinert. Ein
+#: 600-dpi-Bild ungekürzt in die Vorschau zu wandeln kostete bis 0,2 s.
 _PREVIEW_DPI = 110
 
 #: Voreingestellte Haltbarkeit eines frisch gebackenen Brots.
@@ -113,6 +131,9 @@ class LabelDialog(QDialog):
         # Erst wenn ein Etikett wirklich entstanden ist, gilt der Tag als
         # Backtag. Das bloße Öffnen des Dialogs darf kein Rezept umdatieren.
         self._label_was_created = False
+        # Einmal geladen: Die Schriftgrößen bleiben so über alle Vorschauen
+        # hinweg zwischengespeichert.
+        self._fonts = load_font_set()
 
         self.setWindowTitle("Etikett")
         # Die Höhe richtet sich nach der Seitenspalte: Sie muss Gestaltung,
@@ -160,9 +181,11 @@ class LabelDialog(QDialog):
         preview_card.add_widget(self.lbl_dimensions)
         layout.addWidget(preview_card, 3)
 
-        # Einstellungen
-        side = QVBoxLayout()
-        side.setSpacing(SPACING["md"])
+        # Einstellungen - in einem Rollbereich, damit Prüfliste und
+        # Schaltflächen auch auf kleinen Bildschirmen sichtbar bleiben.
+        cards = QVBoxLayout()
+        cards.setContentsMargins(0, 0, 0, 0)
+        cards.setSpacing(SPACING["md"])
 
         settings = Card("Gestaltung")
         form = QFormLayout()
@@ -195,7 +218,7 @@ class LabelDialog(QDialog):
         form.addRow("Farbe", self.cmb_theme)
         form.addRow("Auflösung", self.cmb_dpi)
         settings.body.addLayout(form)
-        side.addWidget(settings)
+        cards.addWidget(settings)
 
         content = Card("Inhalt")
         self.chk_date = QCheckBox("Backdatum anzeigen")
@@ -256,9 +279,24 @@ class LabelDialog(QDialog):
             self.chk_reference,
         ):
             content.add_widget(widget)
-        side.addWidget(content)
-        side.addStretch(1)
+        cards.addWidget(content)
+        cards.addWidget(self._build_sale_card())
+        cards.addStretch(1)
 
+        cards_widget = QWidget()
+        cards_widget.setLayout(cards)
+        scroll = QScrollArea()
+        scroll.setWidget(cards_widget)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        side = QVBoxLayout()
+        side.setSpacing(SPACING["md"])
+        side.addWidget(scroll, 1)
+
+        # Die Farbe richtet sich nach dem Backprozess: Seine Fehler sperren die
+        # Ausgabe, alles andere sind Hinweise. Er ändert sich im Dialog nicht.
         self.lbl_issues = QLabel()
         self.lbl_issues.setWordWrap(True)
         self.lbl_issues.setObjectName(
@@ -266,8 +304,7 @@ class LabelDialog(QDialog):
             if any(f.severity is Severity.ERROR for f in self._process_findings)
             else "Warning"
         )
-        self.lbl_issues.setText("\n".join(f"• {f.message}" for f in self._process_findings))
-        self.lbl_issues.setVisible(bool(self._process_findings))
+        self.lbl_issues.setVisible(False)
         side.addWidget(self.lbl_issues)
 
         # Aktionen
@@ -297,9 +334,11 @@ class LabelDialog(QDialog):
         layout.addWidget(holder)
 
         # Verdrahtung
-        for line_edit in (self.txt_title, self.txt_subtitle, self.txt_footer):
+        for line_edit in (self.txt_title, self.txt_subtitle, self.txt_footer, self.txt_storage):
             line_edit.textChanged.connect(self._refresh)
-        for combo in (self.cmb_size, self.cmb_theme):
+        self.txt_producer.textChanged.connect(self._refresh)
+        # Die Auflösung zählt mit: Geprüft wird das Etikett, wie es gedruckt wird.
+        for combo in (self.cmb_size, self.cmb_theme, self.cmb_dpi):
             combo.currentIndexChanged.connect(self._refresh)
         for check in (
             self.chk_date,
@@ -311,15 +350,65 @@ class LabelDialog(QDialog):
             check.toggled.connect(self._refresh)
         self.chk_best_before.toggled.connect(self.date_best_before.setEnabled)
         self.chk_date.toggled.connect(self.date_baked.setEnabled)
+        self.chk_for_sale.toggled.connect(self._on_for_sale_toggled)
         self.date_baked.dateChanged.connect(self._on_baked_changed)
         self.date_best_before.dateChanged.connect(self._on_best_before_changed)
-        self.cmb_dpi.currentIndexChanged.connect(self._update_dimensions)
 
         self.btn_save.clicked.connect(self._on_save)
         self.btn_save_as.clicked.connect(self._on_save_as)
         self.btn_print.clicked.connect(self._on_print)
         self.btn_preview_print.clicked.connect(self._on_print_preview)
         self.btn_close.clicked.connect(self.reject)
+
+    def _build_sale_card(self) -> Card:
+        """Karte „Verkauf“: Schalter, Hersteller und Lagerhinweis."""
+        card = Card("Verkauf")
+        self.chk_for_sale = QCheckBox("Etikett für den Verkauf")
+        self.chk_for_sale.setToolTip(
+            "Prüft die Pflichtangaben für verpackt verkauftes Brot nach\n"
+            "VO (EU) Nr. 1169/2011: Bezeichnung, Zutatenverzeichnis mit Allergenen,\n"
+            "Nettogewicht, Mindesthaltbarkeit, Name und Anschrift - alles in\n"
+            "mindestens 1,2 mm x-Höhe. Ersetzt keine Rechtsberatung."
+        )
+        card.add_widget(self.chk_for_sale)
+
+        self.txt_producer = QPlainTextEdit()
+        self.txt_producer.setPlaceholderText(
+            "Name und Anschrift, z. B.\nBackstube Muster\nHauptstraße 1\n12345 Musterstadt"
+        )
+        self.txt_producer.setTabChangesFocus(True)
+        # Vier Zeilen - Name, Straße, Ort und Reserve - samt Rahmen und Innenabstand.
+        self.txt_producer.setFixedHeight(self.fontMetrics().lineSpacing() * 4 + 12)
+        self.txt_producer.setToolTip(
+            "Wie eingegeben auf dem Etikett - jede Zeile bleibt eine Zeile."
+        )
+        self.txt_storage = QLineEdit()
+        self.txt_storage.setPlaceholderText("optional, z. B. Trocken lagern.")
+
+        self._sale_form = QFormLayout()
+        self._sale_form.setSpacing(SPACING["sm"])
+        self._sale_form.addRow("Hersteller", self.txt_producer)
+        self._sale_form.addRow("Lagerung", self.txt_storage)
+        card.body.addLayout(self._sale_form)
+        self._show_sale_fields(visible=False)
+        return card
+
+    def _show_sale_fields(self, *, visible: bool) -> None:
+        for row in range(self._sale_form.rowCount()):
+            self._sale_form.setRowVisible(row, visible)
+
+    def _on_for_sale_toggled(self, checked: bool) -> None:
+        """Blendet die Verkaufsangaben ein und setzt, was Pflicht ist.
+
+        Mindesthaltbarkeit und Zutatenverzeichnis werden angehakt - ohne sie
+        darf verpacktes Brot nicht verkauft werden. Abwählen bleibt möglich;
+        die Prüfliste meldet es dann.
+        """
+        self._show_sale_fields(visible=checked)
+        if checked:
+            self.chk_best_before.setChecked(True)
+            self.chk_ingredients.setChecked(True)
+        self._refresh()
 
     # ── Datumskopplung ────────────────────────────────────────────────────
 
@@ -360,6 +449,7 @@ class LabelDialog(QDialog):
     def _options(self, *, dpi: int) -> LabelOptions:
         """Baut die Renderoptionen aus den Bedienelementen."""
         listing = self._ingredient_list()
+        for_sale = self.chk_for_sale.isChecked()
         return LabelOptions(
             title=self.txt_title.text().strip() or "Hausgemachtes Brot",
             subtitle=self.txt_subtitle.text().strip(),
@@ -379,6 +469,9 @@ class LabelDialog(QDialog):
                 "" if self.chk_ingredients.isChecked() else contains_statement(listing.allergens)
             ),
             net_weight_g=self._analysis.baked_weight_g,
+            for_sale=for_sale,
+            producer=self.txt_producer.toPlainText().strip() if for_sale else "",
+            storage_hint=self.txt_storage.text().strip() if for_sale else "",
         )
 
     def _best_before(self) -> date | None:
@@ -394,12 +487,16 @@ class LabelDialog(QDialog):
         )
 
     def _refresh(self) -> None:
-        """Zeichnet die Vorschau neu."""
+        """Zeichnet und prüft das Etikett, zeigt Vorschau und offene Punkte."""
         if self._rendering:
             return
         self._rendering = True
         try:
-            preview = render_label(self._analysis.per_100g, self._options(dpi=_PREVIEW_DPI))
+            options = self._options(dpi=self.cmb_dpi.currentData())
+            image, report = render_and_measure(self._analysis.per_100g, options, fonts=self._fonts)
+            self._show_issues(self._sale_issues(options, report))
+            factor = max(1, options.dpi // _PREVIEW_DPI)
+            preview = image.reduce(factor) if factor > 1 else image
             pixmap = QPixmap.fromImage(pil_to_qimage(preview))
             box = self.lbl_preview.contentsRect().size()
             self.lbl_preview.setPixmap(
@@ -414,6 +511,27 @@ class LabelDialog(QDialog):
         finally:
             self._rendering = False
 
+    def _sale_issues(self, options: LabelOptions, report: LabelReport) -> list[SaleIssue]:
+        """Offene Punkte: Pflichtangaben im Verkauf, dazu das Etikett selbst."""
+        issues: list[SaleIssue] = []
+        if options.for_sale:
+            issues += check_sale(
+                title=self.txt_title.text(),
+                producer=options.producer,
+                baked_on=options.baked_on,
+                best_before=options.best_before,
+                show_ingredients=options.show_ingredients,
+                listing=self._ingredient_list(),
+                net_weight_g=options.net_weight_g,
+            )
+        return issues + report.issues(for_sale=options.for_sale)
+
+    def _show_issues(self, issues: list[SaleIssue]) -> None:
+        """Zeigt Befunde des Backprozesses und offene Punkte unter den Einstellungen."""
+        lines = [f.message for f in self._process_findings] + [i.message for i in issues]
+        self.lbl_issues.setText("\n".join(f"• {line}" for line in lines))
+        self.lbl_issues.setVisible(bool(lines))
+
     def _update_dimensions(self) -> None:
         options = self._options(dpi=self.cmb_dpi.currentData())
         width, height = options.pixel_size()
@@ -424,7 +542,11 @@ class LabelDialog(QDialog):
 
     def _render_output(self) -> Image.Image:
         """Rendert das Etikett in voller Auflösung."""
-        return render_label(self._analysis.per_100g, self._options(dpi=self.cmb_dpi.currentData()))
+        return render_label(
+            self._analysis.per_100g,
+            self._options(dpi=self.cmb_dpi.currentData()),
+            fonts=self._fonts,
+        )
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt-Vertrag
         """Passt die Vorschau an die neue Fenstergröße an."""
@@ -475,8 +597,32 @@ class LabelDialog(QDialog):
         )
         return True
 
+    def _sale_confirmed(self) -> bool:
+        """Fragt nach, bevor ein unvollständiges Verkaufsetikett entsteht.
+
+        Geprüft wird neu und in Ausgabeauflösung - maßgeblich ist, was gleich
+        gedruckt oder gespeichert wird.
+        """
+        options = self._options(dpi=self.cmb_dpi.currentData())
+        if not options.for_sale:
+            return True
+        _, report = render_and_measure(self._analysis.per_100g, options, fonts=self._fonts)
+        issues = self._sale_issues(options, report)
+        if not issues:
+            return True
+        answer = QMessageBox.question(
+            self,
+            "Pflichtangaben unvollständig",
+            "Für den Verkauf fehlt noch etwas:\n\n"
+            + "\n".join(f"• {issue.message}" for issue in issues)
+            + "\n\nTrotzdem fortfahren?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return confirmed(answer)
+
     def _on_save(self) -> None:
-        if self._output_blocked():
+        if self._output_blocked() or not self._sale_confirmed():
             return
         path = self._default_dir / self._suggested_name()
         if path.exists():
@@ -493,7 +639,7 @@ class LabelDialog(QDialog):
             QMessageBox.information(self, "Gespeichert", f"Etikett gespeichert:\n{path}")
 
     def _on_save_as(self) -> None:
-        if self._output_blocked():
+        if self._output_blocked() or not self._sale_confirmed():
             return
         target, _ = QFileDialog.getSaveFileName(
             self,
@@ -531,7 +677,7 @@ class LabelDialog(QDialog):
             painter.end()
 
     def _on_print(self) -> None:
-        if self._output_blocked():
+        if self._output_blocked() or not self._sale_confirmed():
             return
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         dialog = QPrintDialog(printer, self)

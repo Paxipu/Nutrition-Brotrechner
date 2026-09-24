@@ -28,6 +28,18 @@ Gewicht, zugefügtes Wasser nach seinem Anteil im fertigen Brot, gleichnamige
 Zutaten zusammengefasst, Allergene fett. Ohne Verzeichnis steht „Enthält: …“
 mit den Allergenen auf dem Etikett.
 
+**Verkaufen.** Mit „Etikett für den Verkauf“ prüft der Etikettdialog laufend
+die Pflichtangaben für verpackt verkauftes Brot (Artikel 9 VO (EU)
+Nr. 1169/2011): Bezeichnung, Zutatenverzeichnis mit erfassten Allergenen,
+Nettogewicht, Mindesthaltbarkeitsdatum sowie Name und Anschrift des
+Herstellers; ein Aufbewahrungshinweis ist möglich. Jede Schrift hat dann
+mindestens 1,2 mm x-Höhe (Artikel 13, Anhang IV), die Ziffern des Gewichts
+die Mindesthöhe der Fertigpackungsverordnung (bis 1 kg 4 mm, darüber 6 mm),
+und das Zutatenverzeichnis wird nicht gekürzt. Geprüft wird das gezeichnete
+Etikett in Druckauflösung, nicht nur die Eingaben. Offene Punkte stehen im
+Dialog; Speichern und Drucken fragen dann nach. Die Prüfung ersetzt keine
+Rechtsberatung.
+
 **Prüfen.** Eine eingebaute Plausibilitätsprüfung findet Datenfehler, bevor sie
 in einer Auswertung landen: verletzte Massenbilanz, ein Brennwert, der nicht zu
 den Nährstoffen passt, unmögliche Wassergehalte, Dubletten. Auch von der
