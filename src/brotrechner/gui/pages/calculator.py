@@ -232,7 +232,7 @@ class CalculatorPage(QWidget):
         # Kennzahlen
         stats = QGridLayout()
         stats.setSpacing(SPACING["sm"])
-        self.stat_energy = StatCard("Energie je 100 g", "—")
+        self.stat_energy = StatCard("Brennwert je 100 g", "—")
         self.stat_weight = StatCard("Gebacken", "—")
         self.stat_yield = StatCard("Teigausbeute", "—")
         self.stat_cost = StatCard("Kosten je kg", "—")

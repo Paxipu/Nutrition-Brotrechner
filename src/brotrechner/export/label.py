@@ -6,7 +6,7 @@ Druck bedienen - in der Vorversion erzeugte jeder Knopf sein eigenes Bild
 direkt auf der Festplatte, weshalb es keine Vorschau geben konnte.
 
 Aufbau und Reihenfolge der Nährwerttabelle folgen Anhang XV der VO (EU)
-Nr. 1169/2011: Energie (kJ und kcal), Fett, davon gesättigte Fettsäuren,
+Nr. 1169/2011: Brennwert (kJ und kcal), Fett, davon gesättigte Fettsäuren,
 Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz. Die
 Werte sind nach der Leitlinie der EU-Kommission gerundet
 (:mod:`brotrechner.core.rounding`).
@@ -663,7 +663,7 @@ def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str
         Liste aus ``(Bezeichnung, Wert, eingerückt, hervorgehoben)``.
     """
     rows: list[tuple[str, str, bool, bool]] = [
-        ("Energie", declare_energy(as_declarable(nutrients.energy_kcal)), False, True),
+        ("Brennwert", declare_energy(as_declarable(nutrients.energy_kcal)), False, True),
         ("Fett", _grams("fat", nutrients), False, False),
         ("davon gesättigte Fettsäuren", _grams("saturated_fat", nutrients), True, False),
         ("Kohlenhydrate", _grams("carbs", nutrients), False, False),

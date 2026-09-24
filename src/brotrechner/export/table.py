@@ -22,7 +22,7 @@ INGREDIENT_COLUMNS: tuple[str, ...] = (
     "Hersteller",
     "Kategorie",
     "Mehlanteil (%)",
-    "Energie (kcal)",
+    "Brennwert (kcal)",
     "Fett (g)",
     "dav. gesättigt (g)",
     "Kohlenhydrate (g)",

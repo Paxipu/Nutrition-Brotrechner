@@ -34,6 +34,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **„Brennwert“ statt „Energie“** auf dem Etikett, im Bericht, in der CSV und
+  im Rechner. So heißt die Angabe in der deutschen Fassung der VO (EU)
+  Nr. 1169/2011 (Artikel 30, Anhang XV). „Energie“ steht nur noch dort, wo der
+  Strom fürs Backen gemeint ist.
 - Im Zutatendialog ersetzt das Feld **„Mehlanteil“** das Ankreuzfeld „Zählt als
   Mehl“. Ein Hinweis daneben nennt die Teigausbeute, der ein Anteil entspricht.
 - Zutatendateien aus Version 5.1 werden beim ersten Start ergänzt: Sauerteige

@@ -158,7 +158,7 @@ liegen. Was dabei passiert, steht in
 ```
 src/brotrechner/
 ├── core/        Fachlogik, ohne GUI und ohne Dateizugriff
-│   ├── nutrients.py    Nährwertvektor, Energieberechnung
+│   ├── nutrients.py    Nährwertvektor, Brennwertberechnung
 │   ├── models.py       Zutat, Rezept, Kategorien
 │   ├── analysis.py     Bäckerprozent, Teigausbeute, Kosten
 │   ├── tolerances.py   EU-Deklarationstoleranzen

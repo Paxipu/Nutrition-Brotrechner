@@ -200,7 +200,7 @@ class TestUsage:
         from brotrechner.export.label import _nutrition_rows
 
         rows = {label: value for label, value, *_ in _nutrition_rows(BREAD, show_fiber=True)}
-        assert rows["Energie"] == "951 kJ / 227 kcal"
+        assert rows["Brennwert"] == "951 kJ / 227 kcal"
         assert rows["Fett"] == "1,4 g"
         assert rows["davon gesättigte Fettsäuren"] == "< 0,1 g"
         assert rows["Kohlenhydrate"] == "45 g"
@@ -224,7 +224,7 @@ class TestUsage:
         shown = {row[0]: row[1] for row in table._cellvalues[1:]}
         assert shown["Kohlenhydrate"] == "45 g"
         assert shown["Salz"] == "1,2 g"
-        assert shown["Energie"] == "951 kJ / 227 kcal"
+        assert shown["Brennwert"] == "951 kJ / 227 kcal"
 
     @pytest.mark.gui
     def test_the_calculator_names_the_label_value(self, qapp: object) -> None:
