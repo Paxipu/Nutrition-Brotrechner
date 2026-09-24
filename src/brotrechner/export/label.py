@@ -25,6 +25,7 @@ from typing import Final
 
 from PIL import Image, ImageDraw
 
+from brotrechner.core.labeling import Run, parse_emphasis
 from brotrechner.core.nutrients import Nutrients
 from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.export.fonts import Font, FontSet, load_font_set
@@ -121,8 +122,13 @@ class LabelOptions:
     baked_on: date | None = None
 
     #: Zutatenliste, absteigend nach Anteil - so verlangt es die
-    #: Zutatenverzeichnis-Regel der VO (EU) Nr. 1169/2011.
+    #: Zutatenverzeichnis-Regel der VO (EU) Nr. 1169/2011. Allergene stehen in
+    #: ``*Sternchen*`` und werden fett gedruckt.
     ingredients: Sequence[str] = field(default_factory=tuple)
+    #: Allergenangabe für ein Etikett ohne Zutatenverzeichnis, etwa
+    #: "Enthält: Weizen, Milch" (Artikel 21 Abs. 1). Erscheint nur, wenn kein
+    #: Verzeichnis gedruckt wird.
+    allergen_note: str = ""
     net_weight_g: float = 0.0
 
     def pixel_size(self) -> tuple[int, int]:
@@ -305,7 +311,7 @@ def render_label(
         bottom=height - margin - metrics.mm(2.0),
     )
 
-    if options.show_ingredients and options.ingredients:
+    if _shows_ingredients(options):
         _draw_ingredients(
             draw,
             options,
@@ -317,8 +323,31 @@ def render_label(
             top=y,
             bottom=footer_top,
         )
+    elif options.allergen_note.strip():
+        _draw_allergen_note(
+            draw, options, palette=palette, fonts=fonts, m=metrics, left=left, right=right, top=y
+        )
 
     return image
+
+
+def _shows_ingredients(options: LabelOptions) -> bool:
+    """Wird ein Zutatenverzeichnis gedruckt?"""
+    return options.show_ingredients and bool(options.ingredients)
+
+
+def _ingredient_runs(options: LabelOptions) -> list[Run]:
+    """Das Zutatenverzeichnis als Folge normaler und fetter Textstücke.
+
+    Jede Zutat wird für sich zerlegt: Ein nicht geschlossenes Sternchen in
+    einer Bezeichnung darf nicht mit dem der nächsten ein Paar bilden.
+    """
+    runs: list[Run] = []
+    for index, entry in enumerate(options.ingredients):
+        if index:
+            runs.append(Run(", "))
+        runs.extend(parse_emphasis(single_line(entry)))
+    return runs
 
 
 def _fitting_metrics(
@@ -397,14 +426,22 @@ def _required_height(
     if options.net_weight_g > 0:
         total += m.scaled(2.8) + m.scaled(6.0)
 
-    if options.show_ingredients and options.ingredients:
+    if _shows_ingredients(options):
         total += m.scaled(4.0)  # Überschrift
         if full_ingredients:
-            text = single_line(", ".join(options.ingredients))
-            lines = _wrap(draw, text, _font_small(fonts, m), inner_width)
-            total += len(lines) * m.scaled(3.0)
+            ingredient_lines = _wrap_runs(
+                draw,
+                _ingredient_runs(options),
+                _font_small(fonts, m),
+                _font_small(fonts, m, bold=True),
+                inner_width,
+            )
+            total += len(ingredient_lines) * m.scaled(3.0)
         else:
             total += m.scaled(3.0)  # mindestens eine Zeile
+    elif options.allergen_note.strip():
+        note = _wrap(draw, single_line(options.allergen_note), _font_small(fonts, m), inner_width)
+        total += m.scaled(1.0) + len(note) * m.scaled(3.0)
 
     return total + _footer_height(draw, options, fonts, m, inner_width)
 
@@ -445,8 +482,8 @@ def _font_body(fonts: FontSet, m: _Metrics, *, bold: bool = False) -> Font:
     return fonts.get(m.scaled(2.7), bold=bold)
 
 
-def _font_small(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(2.1))
+def _font_small(fonts: FontSet, m: _Metrics, *, bold: bool = False) -> Font:
+    return fonts.get(m.scaled(2.1), bold=bold)
 
 
 def _font_weight(fonts: FontSet, m: _Metrics) -> Font:
@@ -634,26 +671,158 @@ def _draw_ingredients(
     if available <= 0:
         return
 
-    text = single_line(", ".join(options.ingredients))
-    font = _font_small(fonts, m)
-    line_height = m.scaled(3.0)
-    lines = _wrap(draw, text, font, right - left)
-
+    runs = _ingredient_runs(options)
+    width = right - left
     for size_mm, gap_mm in ((2.1, 3.0), (1.9, 2.7), (1.7, 2.4), (1.5, 2.1)):
-        font = fonts.get(m.scaled(size_mm))
+        regular = fonts.get(m.scaled(size_mm))
+        bold = fonts.get(m.scaled(size_mm), bold=True)
         line_height = m.scaled(gap_mm)
-        lines = _wrap(draw, text, font, right - left)
+        lines = _wrap_runs(draw, runs, regular, bold, width)
         if len(lines) * line_height <= available:
             break
     else:
         max_lines = max(1, available // line_height)
         if len(lines) > max_lines:
             lines = lines[:max_lines]
-            lines[-1] = lines[-1].rstrip(", ") + " …"
+            lines[-1] = [*lines[-1], [("…", False)]]
 
     for line in lines:
-        draw.text((left, y), line, fill=palette.muted, font=font)
+        # Allergene fett und in der kräftigeren Textfarbe: Sie sollen sich
+        # deutlich vom übrigen Verzeichnis abheben (Artikel 21 Abs. 1).
+        _draw_runs_line(
+            draw,
+            line,
+            x=left,
+            y=y,
+            regular=regular,
+            bold=bold,
+            fill=palette.muted,
+            bold_fill=palette.text,
+        )
         y += line_height
+
+
+def _draw_allergen_note(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    *,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    left: int,
+    right: int,
+    top: int,
+) -> None:
+    """Allergenangabe anstelle des Zutatenverzeichnisses."""
+    y = top + m.scaled(1.0)
+    font = _font_small(fonts, m)
+    for line in _wrap(draw, single_line(options.allergen_note), font, right - left):
+        draw.text((left, y), line, fill=palette.text, font=font)
+        y += m.scaled(3.0)
+
+
+#: Eine Zeile aus Wörtern, jedes Wort aus Stücken ``(Text, fett)``.
+_Word = list[tuple[str, bool]]
+_Line = list[_Word]
+
+
+def _wrap_runs(
+    draw: ImageDraw.ImageDraw,
+    runs: Sequence[Run],
+    regular: Font,
+    bold: Font,
+    max_width: int,
+) -> list[_Line]:
+    """Bricht Text aus normalen und fetten Stücken auf die Breite um.
+
+    Ein Wort kann aus mehreren Stücken bestehen ("**Weizen**mehl") und wird
+    nie zwischen ihnen getrennt. Nur ein Wort, das allein breiter als die
+    Zeile ist, wird hart getrennt, damit nichts über den Rand läuft.
+    """
+    words: list[_Word] = [[]]
+    for run in runs:
+        for index, part in enumerate(run.text.split(" ")):
+            if index:
+                words.append([])
+            if part:
+                words[-1].append((part, run.bold))
+    space = draw.textlength(" ", font=regular)
+
+    lines: list[_Line] = []
+    current: _Line = []
+    current_width = 0.0
+    for word in (w for w in words if w):
+        for piece in _split_word(draw, word, regular, bold, max_width):
+            width = _word_width(draw, piece, regular, bold)
+            if current and current_width + space + width > max_width:
+                lines.append(current)
+                current, current_width = [], 0.0
+            current_width += (space if current else 0.0) + width
+            current.append(piece)
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _split_word(
+    draw: ImageDraw.ImageDraw, word: _Word, regular: Font, bold: Font, max_width: int
+) -> list[_Word]:
+    """Trennt ein Wort, das allein breiter als die Zeile ist, Zeichen für Zeichen."""
+    if _word_width(draw, word, regular, bold) <= max_width:
+        return [word]
+    pieces: list[_Word] = [[]]
+    for text, is_bold in word:
+        for char in text:
+            candidate = [*pieces[-1], (char, is_bold)]
+            if pieces[-1] and _word_width(draw, candidate, regular, bold) > max_width:
+                pieces.append([(char, is_bold)])
+            else:
+                pieces[-1] = candidate
+    return [_merge_segments(piece) for piece in pieces]
+
+
+def _merge_segments(word: _Word) -> _Word:
+    """Fasst benachbarte Stücke gleicher Auszeichnung zusammen."""
+    merged: _Word = []
+    for text, is_bold in word:
+        if merged and merged[-1][1] == is_bold:
+            merged[-1] = (merged[-1][0] + text, is_bold)
+        else:
+            merged.append((text, is_bold))
+    return merged
+
+
+def _word_width(draw: ImageDraw.ImageDraw, word: _Word, regular: Font, bold: Font) -> float:
+    return sum(draw.textlength(text, font=bold if is_bold else regular) for text, is_bold in word)
+
+
+def _line_width(draw: ImageDraw.ImageDraw, line: _Line, regular: Font, bold: Font) -> float:
+    """Breite einer umbrochenen Zeile samt Wortabständen."""
+    space = draw.textlength(" ", font=regular)
+    return sum(_word_width(draw, word, regular, bold) for word in line) + space * (len(line) - 1)
+
+
+def _draw_runs_line(
+    draw: ImageDraw.ImageDraw,
+    line: _Line,
+    *,
+    x: int,
+    y: int,
+    regular: Font,
+    bold: Font,
+    fill: str,
+    bold_fill: str,
+) -> None:
+    """Zeichnet eine Zeile Stück für Stück mit der jeweiligen Schrift und Farbe."""
+    space = draw.textlength(" ", font=regular)
+    cursor = float(x)
+    for index, word in enumerate(line):
+        if index:
+            cursor += space
+        for text, is_bold in word:
+            font = bold if is_bold else regular
+            draw.text((round(cursor), y), text, fill=bold_fill if is_bold else fill, font=font)
+            cursor += draw.textlength(text, font=font)
 
 
 def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str, str, bool, bool]]:

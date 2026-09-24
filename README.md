@@ -23,7 +23,10 @@ mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog �
 ohne Umweg über eine Datei. Aufbau und Reihenfolge folgen Anhang XV der
 VO (EU) Nr. 1169/2011. Backdatum und Mindesthaltbarkeit sind frei wählbar: Das
 Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
-bleibt erhalten.
+bleibt erhalten. Das Zutatenverzeichnis folgt Artikel 18: absteigend nach
+Gewicht, zugefügtes Wasser nach seinem Anteil im fertigen Brot, gleichnamige
+Zutaten zusammengefasst, Allergene fett. Ohne Verzeichnis steht „Enthält: …“
+mit den Allergenen auf dem Etikett.
 
 **Prüfen.** Eine eingebaute Plausibilitätsprüfung findet Datenfehler, bevor sie
 in einer Auswertung landen: verletzte Massenbilanz, ein Brennwert, der nicht zu

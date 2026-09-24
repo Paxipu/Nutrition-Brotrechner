@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 )
 
 from brotrechner.core.analysis import RecipeAnalysis
+from brotrechner.core.labeling import IngredientList, build_ingredient_list, contains_statement
 from brotrechner.core.plausibility import check_process
 from brotrechner.core.validation import Severity
 from brotrechner.export.label import LabelOptions, LabelSize, LabelTheme, render_label
@@ -235,8 +236,9 @@ class LabelDialog(QDialog):
         self.chk_ingredients = QCheckBox("Zutatenverzeichnis")
         self.chk_ingredients.setChecked(True)
         self.chk_ingredients.setToolTip(
-            "Zutaten in absteigender Reihenfolge ihres Anteils - so verlangt es\n"
-            "die Kennzeichnungsverordnung für abgegebene Lebensmittel."
+            "Zutaten in absteigender Reihenfolge ihres Gewichts, Allergene fett -\n"
+            "so verlangt es die Kennzeichnungsverordnung. Ohne Verzeichnis steht\n"
+            'stattdessen "Enthält: ..." mit den Allergenen auf dem Etikett.'
         )
         self.chk_fiber = QCheckBox("Ballaststoffe ausweisen")
         self.chk_fiber.setChecked(True)
@@ -357,6 +359,7 @@ class LabelDialog(QDialog):
 
     def _options(self, *, dpi: int) -> LabelOptions:
         """Baut die Renderoptionen aus den Bedienelementen."""
+        listing = self._ingredient_list()
         return LabelOptions(
             title=self.txt_title.text().strip() or "Hausgemachtes Brot",
             subtitle=self.txt_subtitle.text().strip(),
@@ -370,7 +373,11 @@ class LabelDialog(QDialog):
             footer=self.txt_footer.text().strip(),
             best_before=self._best_before(),
             baked_on=_to_date(self.date_baked.date()),
-            ingredients=self._ingredient_names(),
+            ingredients=tuple(entry.markup for entry in listing.entries),
+            # Ohne Zutatenverzeichnis müssen die Allergene trotzdem genannt werden.
+            allergen_note=(
+                "" if self.chk_ingredients.isChecked() else contains_statement(listing.allergens)
+            ),
             net_weight_g=self._analysis.baked_weight_g,
         )
 
@@ -380,19 +387,10 @@ class LabelDialog(QDialog):
             return None
         return _to_date(self.date_best_before.date())
 
-    def _ingredient_names(self) -> tuple[str, ...]:
-        """Zutatennamen, absteigend nach Anteil sortiert.
-
-        Gleichnamige Zutaten verschiedener Hersteller werden zusammengefasst
-        und ihre Mengen addiert. Auf dem Etikett zählt das Lebensmittel, nicht
-        die Einkaufsquelle - "Roggenvollkornmehl" dreimal aufzuführen, nur weil
-        drei Mühlen im Teig sind, wäre irreführend.
-        """
-        totals: dict[str, float] = {}
-        for line in self._analysis.lines:
-            totals[line.ingredient.name] = totals.get(line.ingredient.name, 0.0) + line.amount_g
-        return tuple(
-            name for name, _ in sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    def _ingredient_list(self) -> IngredientList:
+        """Zutatenverzeichnis nach LMIV: sortiert, zusammengefasst, Allergene markiert."""
+        return build_ingredient_list(
+            self._analysis.lines, baked_weight_g=self._analysis.baked_weight_g
         )
 
     def _refresh(self) -> None:

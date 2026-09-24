@@ -55,6 +55,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Angaben beim ersten Start aus der Startdatenbank. Der Zutatendialog ist dafür
   zweispaltig; die Datenprüfung meldet nicht hervorgehobene Allergene und
   Hervorhebungen ohne Allergen, die Zutatenliste und die CSV zeigen beides.
+- **Zutatenverzeichnis nach LMIV auf dem Etikett.** Bisher standen dort die
+  Datenbanknamen („Hefe (frisch)“, „Sauerteig Anstellgut (Roggen)“), sortiert
+  nach der Menge im Teig und ohne Hervorhebung. Jetzt: die Bezeichnung für das
+  Zutatenverzeichnis; absteigend nach Gewicht, wobei zugefügtes Wasser mit dem
+  zählt, was davon im fertigen Brot bleibt (Anhang VII Teil A) - bei hoher
+  Hydration rückt es dadurch hinter das Mehl; gleichnamige Zutaten
+  zusammengefasst; Allergene fett und in kräftigerer Farbe, auch mitten im Wort
+  („**Weizen**mehl“). Wird kein Verzeichnis gedruckt, steht „Enthält: …“ mit den
+  Allergenen auf dem Etikett (Artikel 21 Abs. 1).
 - **Plausibilitätsprüfung der Gewichte.** Ein Tippfehler beim Brotgewicht -
   75 statt 750 g - ergab bisher ohne Warnung 2273 kcal je 100 g, mehr als
   reines Fett haben kann, und landete so auf dem Etikett. Der Rechner meldet
