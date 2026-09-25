@@ -63,6 +63,7 @@ from brotrechner.gui.pages.recipes import RecipesPage
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING, ThemeMode, Tokens, build_stylesheet, resolve_tokens
 from brotrechner.gui.widgets.cards import ClickableLabel
+from brotrechner.i18n import format_number
 from brotrechner.settings import Settings, load_settings, save_settings
 
 __all__ = ["MainWindow"]
@@ -655,7 +656,7 @@ class MainWindow(QMainWindow):
         self._recipes.add(scaled)
         if self._save_recipes():
             self._refresh_all()
-            self._flash(f"„{scaled.name}“ angelegt (Faktor {dialog.factor:.3f})")
+            self._flash(f"„{scaled.name}“ angelegt (Faktor {format_number(dialog.factor, 3)})")
 
     def _on_rename_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)

@@ -48,6 +48,7 @@ from brotrechner.core.allergens import Allergen
 from brotrechner.core.labeling import has_emphasis, has_unmatched_mark
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients, energy_from_macros
+from brotrechner.i18n import format_number
 
 __all__ = [
     "KNOWN_MANUFACTURERS",
@@ -230,7 +231,7 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
             "flour_percent",
             "flour_range",
             Severity.ERROR,
-            f"Mehlanteil {ingredient.flour_percent:g} % liegt außerhalb von 0 bis 100 %",
+            f"Mehlanteil {_decimal(ingredient.flour_percent)} % liegt außerhalb von 0 bis 100 %",
             min(100.0, max(0.0, ingredient.flour_percent)),
         )
 
@@ -240,7 +241,8 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
             "water",
             "mass_balance",
             Severity.ERROR,
-            f"Massenbilanz verletzt: Fett+KH+Eiweiß+Ballaststoffe+Salz+Wasser = {mass:.1f} g "
+            "Massenbilanz verletzt: Fett+KH+Eiweiß+Ballaststoffe+Salz+Wasser = "
+            f"{format_number(mass, 1)} g "
             f"je 100 g",
             max(0.0, n.water - (mass - 100.0)),
         )
@@ -404,3 +406,8 @@ def validate_database(ingredients: Iterable[Ingredient]) -> list[Finding]:
 
     findings.sort(key=lambda f: (-f.severity.rank, f.display_name.casefold(), f.field))
     return findings
+
+
+def _decimal(value: float) -> str:
+    """Zahl so knapp wie nötig und mit Komma: 150 bleibt "150", 100,5 wird "100,5"."""
+    return f"{value:g}".replace(".", ",")

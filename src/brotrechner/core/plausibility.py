@@ -36,6 +36,7 @@ from typing import Final
 from brotrechner.core.analysis import RecipeAnalysis
 from brotrechner.core.nutrients import ENERGY_FACTORS_KCAL_PER_G
 from brotrechner.core.validation import Severity
+from brotrechner.i18n import format_number
 
 __all__ = [
     "MAX_BAKE_LOSS_PERCENT",
@@ -197,8 +198,8 @@ def _bake_loss_findings(analysis: RecipeAnalysis) -> list[ProcessFinding]:
         ProcessFinding(
             "bake_loss",
             Severity.WARNING,
-            f"Backverlust {loss:.1f} % ist ungewöhnlich; üblich sind etwa 10 bis 25 %. "
-            f"Stimmen Rohteig- und Brotgewicht?",
+            f"Backverlust {format_number(loss, 1)} % ist ungewöhnlich; üblich sind etwa "
+            "10 bis 25 %. Stimmen Rohteig- und Brotgewicht?",
         )
     ]
 

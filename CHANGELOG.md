@@ -82,6 +82,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Funktion dafür gab es, erreichbar war aber nur „Zutaten als CSV“ - die
   Datenbank, nicht das Rezept. Jetzt gibt es „Datei → Auswertung als CSV …“
   mit Mengen, Anteilen, Bäckerprozenten und Kosten je Zutat.
+- **Der PDF-Bericht schrieb Zahlen mit Dezimalpunkt.** Beträge und Prozente
+  standen dort als „1.99 €“ und „60.0 %“, während Rechner, Etikett und CSV das
+  Komma verwenden. Dasselbe galt für die Anteilsspalte im Rechner („60.0 %“
+  neben „600,0“ g), Skalierungsfaktor und Backverlust dort sowie die Meldungen
+  zu Backverlust, Massenbilanz und Mehlanteil. Jetzt steht überall das Komma.
 - **Ungespeicherte Arbeit im Rechner ging ohne Rückfrage verloren.** „Neu /
   leeren“, das Laden eines anderen Rezepts und das Beenden verwarfen den
   Rechner ohne ein Wort. Jetzt fragt das Programm „Speichern, Verwerfen oder

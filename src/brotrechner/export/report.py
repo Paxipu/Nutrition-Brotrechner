@@ -18,7 +18,7 @@ from brotrechner import __version__
 from brotrechner.core.analysis import RecipeAnalysis
 from brotrechner.core.reference import reference_intake_percent, traffic_light
 from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
-from brotrechner.i18n import NUTRIENT_LABELS, format_number
+from brotrechner.i18n import NUTRIENT_LABELS, format_currency, format_number
 
 __all__ = ["ReportError", "is_available", "write_report"]
 
@@ -189,7 +189,7 @@ def _facts_table(analysis: RecipeAnalysis) -> Any:
         ],
         [
             "Backverlust",
-            f"{analysis.water_loss_percent:.1f} %",
+            f"{format_number(analysis.water_loss_percent, 1)} %",
             "Hydration",
             f"{analysis.hydration_percent:.0f} %" if analysis.dough_yield else "-",
         ],
@@ -288,10 +288,10 @@ def _ingredients_table(analysis: RecipeAnalysis) -> Any:
                 ingredient.name,
                 ingredient.manufacturer or "-",
                 f"{line.amount_g:.0f} g",
-                f"{line.share_percent:.1f} %",
+                f"{format_number(line.share_percent, 1)} %",
                 f"{line.baker_percent:.0f} %" if analysis.flour_mass_g else "-",
                 format_number(ingredient.price_per_100g, 3) if ingredient.has_price else "-",
-                f"{line.cost:.2f} €" if ingredient.has_price else "-",
+                format_currency(line.cost) if ingredient.has_price else "-",
             ]
         )
 
@@ -320,16 +320,16 @@ def _ingredients_table(analysis: RecipeAnalysis) -> Any:
 def _cost_summary(analysis: RecipeAnalysis) -> Any:
     """Kostenzusammenfassung rechtsbündig."""
     rows = [
-        ["Materialkosten", f"{analysis.material_cost:.2f} €"],
+        ["Materialkosten", format_currency(analysis.material_cost)],
         [
             f"Energie ({format_number(analysis.energy_kwh, 2)} kWh × "
             f"{format_number(analysis.energy_price, 2)} €/kWh)",
-            f"{analysis.energy_cost:.2f} €",
+            format_currency(analysis.energy_cost),
         ],
-        ["Gesamtkosten", f"{analysis.total_cost:.2f} €"],
+        ["Gesamtkosten", format_currency(analysis.total_cost)],
         ["", ""],
-        ["Preis je 100 g", f"{analysis.cost_per_100g:.2f} €"],
-        ["Preis je Kilogramm", f"{analysis.cost_per_kg:.2f} €"],
+        ["Preis je 100 g", format_currency(analysis.cost_per_100g)],
+        ["Preis je Kilogramm", format_currency(analysis.cost_per_kg)],
     ]
     table = Table(rows, colWidths=[8.0 * cm, 3.4 * cm], hAlign="RIGHT")
     table.setStyle(

@@ -154,7 +154,7 @@ class RecipeItemsModel(QAbstractTableModel):
         if line is None:
             return "—"
         if column == _COL_SHARE:
-            return f"{line.share_percent:.1f} %"
+            return f"{format_number(line.share_percent, 1)} %"
         if column == _COL_BAKER:
             return f"{line.baker_percent:.0f} %" if line.baker_percent else "—"
         if column == _COL_COST:

@@ -637,7 +637,7 @@ class CalculatorPage(QWidget):
         if analysis.dough_yield > 0:
             parts.append(f"TA {analysis.dough_yield:.0f}")
         if abs(analysis.scale_factor - 1.0) > 0.005:
-            parts.append(f"Skalierung ×{analysis.scale_factor:.3f}")
+            parts.append(f"Skalierung ×{format_number(analysis.scale_factor, 3)}")
         self.lbl_summary.setText("   ·   ".join(parts))
 
     def _render_stats(self, analysis: RecipeAnalysis, findings: Sequence[ProcessFinding]) -> None:
@@ -655,7 +655,7 @@ class CalculatorPage(QWidget):
             f"{analysis.baked_weight_g:.0f} g",
             "⚠ unmöglich - siehe Backprozess"
             if has_errors(findings)
-            else f"Backverlust {analysis.water_loss_percent:.1f} %",
+            else f"Backverlust {format_number(analysis.water_loss_percent, 1)} %",
         )
         yield_hint = (
             f"Hydration {analysis.hydration_percent:.0f} %"
