@@ -69,6 +69,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
   mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
   beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
+- **Ein Tippfehler in `settings.json` verhinderte den Start.** Jeder Wert
+  wurde ungeprüft übernommen: `"theme": "blau"` ließ das Programm mit
+  `ValueError` abbrechen, ein Strompreis `"abc"` scheiterte erst beim
+  Rechnen. Jetzt wird jeder Wert auf Typ und Bereich geprüft; für einen
+  ungültigen gilt die Vorgabe, die übrigen bleiben erhalten, und das
+  Protokoll nennt ihn. Ein Eigenschaftstest liest beliebige JSON-Inhalte.
 - **Unerwartete Fehler verschwanden spurlos.** Beim Start per Doppelklick
   gibt es keine Konsole. Eine Ausnahme in einer Aktion ließ deshalb einfach
   einen Knopf nicht reagieren, und scheiterte der Aufbau des Hauptfensters -

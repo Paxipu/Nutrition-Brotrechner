@@ -10,15 +10,24 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from brotrechner.core.analysis import DEFAULT_ENERGY_PRICE_EUR_PER_KWH
 
-__all__ = ["Settings", "load_settings", "save_settings"]
+__all__ = ["THEMES", "Settings", "load_settings", "save_settings"]
 
 log = logging.getLogger(__name__)
+
+#: Gültige Farbmodi - dieselben Werte wie ``ThemeMode`` der Oberfläche, die
+#: hier nicht importiert wird, damit Einstellungen ohne Qt lesbar bleiben.
+THEMES: Final = ("system", "light", "dark")
+
+#: Spanne des Strompreises in Euro je kWh - dieselbe wie im Rechner.
+_ENERGY_PRICE_RANGE: Final = (0.0, 10.0)
 
 
 @dataclass(slots=True)
@@ -39,9 +48,57 @@ class Settings:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
-        """Liest Einstellungen; unbekannte Schlüssel werden ignoriert."""
-        known = set(cls.__slots__)
-        return cls(**{k: v for k, v in data.items() if k in known})
+        """Liest Einstellungen; Unbekanntes wird ignoriert, Ungültiges ersetzt.
+
+        Die Datei lässt sich von Hand bearbeiten, und ein Tippfehler darf den
+        Start nicht verhindern. Früher wurde jeder Wert ungeprüft übernommen -
+        ``"theme": "blau"`` ließ das Programm beim Start abstürzen. Jetzt gilt
+        für einen ungültigen Wert die Vorgabe, und das Protokoll nennt ihn.
+        """
+        values: dict[str, Any] = {}
+        for name, value in data.items():
+            check = _CHECKS.get(name)
+            if check is None:
+                continue
+            cleaned = check(value)
+            if cleaned is None:
+                log.warning("Einstellung %s=%r ist ungültig - es gilt die Vorgabe", name, value)
+                continue
+            values[name] = cleaned
+        return cls(**values)
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _flag(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _theme(value: object) -> str | None:
+    return value if isinstance(value, str) and value in THEMES else None
+
+
+def _energy_price(value: object) -> float | None:
+    # bool ist in Python eine Zahl - "true" als Preis ist trotzdem ein Fehler.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    low, high = _ENERGY_PRICE_RANGE
+    number = float(value)
+    return number if math.isfinite(number) and low <= number <= high else None
+
+
+#: Prüfung je Einstellung: liefert den bereinigten Wert oder ``None``.
+_CHECKS: Final[dict[str, Callable[[object], Any]]] = {
+    "theme": _theme,
+    "energy_price": _energy_price,
+    "export_dir": _text,
+    "window_geometry": _text,
+    "show_tolerances": _flag,
+    "last_label_theme": _text,
+    "last_label_size": _text,
+}
 
 
 def load_settings(path: Path) -> Settings:
