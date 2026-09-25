@@ -21,8 +21,8 @@ from datetime import date
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QImage, QPainter, QPixmap, QResizeEvent
+from PySide6.QtCore import QDate, QRectF, Qt
+from PySide6.QtGui import QImage, QPageLayout, QPainter, QPixmap, QResizeEvent
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -58,6 +58,7 @@ from brotrechner.export.label import (
     render_and_measure,
     render_label,
 )
+from brotrechner.export.printing import centered
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
@@ -656,23 +657,27 @@ class LabelDialog(QDialog):
             QMessageBox.information(self, "Gespeichert", f"Etikett gespeichert:\n{path}")
 
     def _paint_to_printer(self, printer: QPrinter) -> None:
-        """Zeichnet das Etikett seitenfüllend und maßstabsgetreu auf die Seite."""
-        image = pil_to_qimage(self._render_output())
+        """Zeichnet das Etikett in Originalgröße mitten auf die Seite.
+
+        Früher wurde es auf die ganze Seite gestreckt - ein Etikett von
+        70 × 100 mm kam auf A4 rund 200 mm breit heraus. Jetzt wird in
+        Millimetern ab der Papierkante gerechnet und erst zuletzt mit der
+        Auflösung des Druckers in Pixel umgesetzt.
+        """
+        options = self._options(dpi=self.cmb_dpi.currentData())
+        image = pil_to_qimage(render_label(self._analysis.per_100g, options, fonts=self._fonts))
+        # Ursprung an der Papierkante statt am bedruckbaren Bereich: Sonst
+        # zählte der Druckerrand doppelt, einmal von Qt und einmal hier.
+        printer.setFullPage(True)
+        paper = printer.pageLayout().fullRect(QPageLayout.Unit.Millimeter)
+        placement = centered(options.size.millimeters, (paper.width(), paper.height()))
         painter = QPainter()
         if not painter.begin(printer):  # pragma: no cover - Druckerfehler
             QMessageBox.critical(self, "Drucken", "Der Drucker konnte nicht geöffnet werden.")
             return
         try:
-            target = printer.pageRect(QPrinter.Unit.DevicePixel)
-            scaled = image.scaled(
-                target.size().toSize(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            # Mittig platzieren; ein Etikett soll nicht in der Ecke kleben.
-            x = target.x() + (target.width() - scaled.width()) / 2
-            y = target.y() + (target.height() - scaled.height()) / 2
-            painter.drawImage(int(x), int(y), scaled)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawImage(QRectF(*placement.to_pixels(printer.resolution())), image)
         finally:
             painter.end()
 

@@ -52,6 +52,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   höher - und mehrzeilige Texte in gleichmäßigem Zeilenabstand. Ein Test
   zeichnet jede Textausgabe auf und prüft Rand und Überdeckung für alle
   Formate, ein Eigenschaftstest mit beliebig langen Texten.
+- **Das Etikett wurde auf die ganze Druckseite gestreckt.** Ein Etikett von
+  70 × 100 mm kam auf A4 rund 200 mm breit aus dem Drucker. Außerdem zählte
+  der Druckerrand doppelt, das Etikett saß um den Rand versetzt. Gedruckt wird
+  jetzt in Originalgröße, mitten auf dem Papier, auf jedem Drucker gleich: Die
+  Lage wird in Millimetern ab der Papierkante berechnet und erst zuletzt mit
+  der Auflösung des Druckers umgerechnet. Nachgemessen an einem gedruckten
+  PDF: 70,1 × 100,3 mm bei 0,25 mm Messauflösung.
 
 ### Hinzugefügt
 
