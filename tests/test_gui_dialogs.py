@@ -292,6 +292,55 @@ class TestPersistence:
             MainWindow(data_dir=data_dir).close()
         assert list((data_dir / "backups").glob("*.json")) == []
 
+    @pytest.mark.parametrize("name", ["ingredients.json", "recipes.json"])
+    def test_an_unreadable_file_is_never_overwritten(
+        self, qapp: object, data_dir, dialogs: dict[str, object], name: str
+    ) -> None:
+        """Das Programm startete leer - und schrieb beim Beenden die leere
+        Datenbank über die unlesbare Datei, obwohl es versprochen hatte, sie
+        nicht zu verändern."""
+        del qapp, dialogs
+        from brotrechner.gui.main_window import MainWindow
+
+        MainWindow(data_dir=data_dir).close()  # legt beide Dateien an
+        broken = '{"schema_version": 2, "ingredients": [ kaputt'
+        (data_dir / name).write_text(broken, encoding="utf-8")
+        window = MainWindow(data_dir=data_dir)
+        window.close()
+        kept = [p for p in data_dir.rglob("*.json") if p.read_text(encoding="utf-8") == broken]
+        assert kept, "die unlesbare Datei ist verloren"
+        assert kept[0].parent == data_dir, "sie gehört neben die Daten, nicht in die Sicherungen"
+
+    def test_after_setting_aside_the_seed_ingredients_are_there(
+        self, qapp: object, data_dir, dialogs: dict[str, object]
+    ) -> None:
+        del qapp, dialogs
+        from brotrechner.gui.main_window import MainWindow
+
+        (data_dir / "ingredients.json").write_text("{kaputt", encoding="utf-8")
+        window = MainWindow(data_dir=data_dir)
+        assert len(window._ingredients) > 50  # type: ignore[attr-defined]
+        window.close()
+        assert list(data_dir.glob("ingredients.defekt-*.json"))
+
+    def test_a_file_that_cannot_be_set_aside_is_not_written(
+        self,
+        qapp: object,
+        data_dir,
+        dialogs: dict[str, object],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        del qapp, dialogs
+        from brotrechner.gui import main_window
+        from brotrechner.gui.main_window import MainWindow
+
+        monkeypatch.setattr(main_window, "set_aside", lambda _path: None)
+        (data_dir / "recipes.json").write_text("{kaputt", encoding="utf-8")
+        window = MainWindow(data_dir=data_dir)
+        window._recipes.add(Recipe(name="Neu"))  # type: ignore[attr-defined]
+        window.close()
+        assert (data_dir / "recipes.json").read_text(encoding="utf-8") == "{kaputt"
+
     def test_notes_added_later_are_written_to_disk(
         self, window: object, data_dir, dialogs: dict[str, object]
     ) -> None:

@@ -27,6 +27,7 @@ from brotrechner.data.repository import (
     IngredientStore,
     make_backup,
     save_ingredients,
+    set_aside,
     write_json_atomic,
 )
 
@@ -175,3 +176,44 @@ class TestHistory:
                     expected.append({"stand": previous})
                 previous = state
             assert backups(Path(folder)) == expected[-MAX_BACKUPS:]
+
+
+class TestSetAside:
+    """Eine unlesbare Datei wird beiseitegelegt, nicht überschrieben."""
+
+    def test_the_file_moves_next_to_its_old_place(self, tmp_path: Path) -> None:
+        broken = tmp_path / "ingredients.json"
+        broken.write_text("{kaputt", encoding="utf-8")
+        aside = set_aside(broken)
+        assert aside is not None
+        assert aside.parent == tmp_path
+        assert aside.name.startswith("ingredients.defekt-")
+        assert aside.suffix == ".json"
+        assert aside.read_text(encoding="utf-8") == "{kaputt"
+        assert not broken.exists()
+
+    def test_the_same_instant_twice(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(repository, "datetime", _FrozenClock)
+        broken = tmp_path / "ingredients.json"
+        broken.write_text("eins", encoding="utf-8")
+        first = set_aside(broken)
+        broken.write_text("zwei", encoding="utf-8")
+        second = set_aside(broken)
+        assert first is not None
+        assert second is not None
+        assert first != second
+        assert first.read_text(encoding="utf-8") == "eins"
+        assert second.read_text(encoding="utf-8") == "zwei"
+
+    def test_a_file_that_cannot_move_stays_where_it_is(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        broken = tmp_path / "ingredients.json"
+        broken.write_text("{kaputt", encoding="utf-8")
+
+        def refuse(_self: Path, _target: Path) -> Path:
+            raise PermissionError("gesperrt")
+
+        monkeypatch.setattr(Path, "rename", refuse)
+        assert set_aside(broken) is None
+        assert broken.read_text(encoding="utf-8") == "{kaputt"

@@ -61,6 +61,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   neuer Zeitstempel allein zählt nicht -, die Namen sind eindeutig, und keine
   Sicherung verdoppelt die jüngste. „Sicherung anlegen“ sichert nun den
   jetzigen Stand, nicht nur den vorherigen.
+- **Eine unlesbare Datendatei wurde beim Beenden überschrieben.** Ließ sich
+  die Zutaten- oder Rezeptdatei beim Start nicht lesen, startete das Programm
+  leer und versprach, die Datei nicht zu verändern - beim Schließen schrieb es
+  dann die leere Datenbank darüber. Jetzt wird die Datei unverändert
+  beiseitegelegt (etwa `ingredients.defekt-20260925_101500.json`), die Meldung
+  sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
+  mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
+  beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
 - **Das Etikett wurde auf die ganze Druckseite gestreckt.** Ein Etikett von
   70 × 100 mm kam auf A4 rund 200 mm breit aus dem Drucker. Außerdem zählte
   der Druckerrand doppelt, das Etikett saß um den Rand versetzt. Gedruckt wird

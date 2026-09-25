@@ -37,14 +37,16 @@ from brotrechner.core.validation import Severity, validate_database
 from brotrechner.data import portable
 from brotrechner.data.repository import (
     IngredientStore,
+    LoadResult,
     RecipeStore,
     RepositoryError,
     load_recipes,
     make_backup,
     save_ingredients,
     save_recipes,
+    set_aside,
 )
-from brotrechner.data.seed import ensure_user_database, load_user_ingredients
+from brotrechner.data.seed import SeedResult, ensure_user_database, load_user_ingredients
 from brotrechner.export import report, table
 from brotrechner.gui.dialogs.ingredient_dialog import IngredientDialog
 from brotrechner.gui.dialogs.label_dialog import LabelDialog
@@ -89,6 +91,9 @@ class MainWindow(QMainWindow):
         self._ingredients = IngredientStore()
         self._recipes = RecipeStore()
         self._analysis = RecipeAnalysis()
+        # Unlesbare Dateien, die sich nicht beiseitelegen ließen: In sie wird
+        # in dieser Sitzung nicht geschrieben, damit sie erhalten bleiben.
+        self._protected: set[Path] = set()
 
         self.setWindowTitle(f"Brotrechner {__version__}")
         self.setMinimumSize(QSize(1120, 720))
@@ -262,26 +267,16 @@ class MainWindow(QMainWindow):
     # ── Daten laden und speichern ─────────────────────────────────────────
 
     def _load_data(self) -> None:
-        """Lädt Zutaten und Rezepte, legt sie beim ersten Start an."""
-        try:
-            seed = ensure_user_database(
-                self._ingredients_path,
-                self._recipes_path,
-                legacy_dir=Path.cwd(),
-            )
-            self._ingredients, ingredient_result = load_user_ingredients(self._ingredients_path)
-            self._recipes, recipe_result = load_recipes(self._recipes_path, self._ingredients)
-        except RepositoryError as exc:
-            QMessageBox.critical(
-                self,
-                "Daten konnten nicht geladen werden",
-                f"{exc}\n\nDas Programm startet mit leerer Datenbank. Die vorhandene "
-                f"Datei wurde nicht verändert - eine Sicherung liegt in\n"
-                f"{paths.backup_dir(self._data_dir)}",
-            )
-            self._ingredients, self._recipes = IngredientStore(), RecipeStore()
-            self._refresh_all()
-            return
+        """Lädt Zutaten und Rezepte, legt sie beim ersten Start an.
+
+        Eine unlesbare Datei wird beiseitegelegt, statt sie beim Beenden zu
+        überschreiben. Früher startete das Programm dann leer, versprach, die
+        Datei nicht zu verändern - und schrieb beim Schließen die leere
+        Datenbank darüber.
+        """
+        seed = self._ensure_database()
+        self._ingredients, ingredient_result = self._load_ingredient_file()
+        self._recipes, recipe_result = self._load_recipe_file()
 
         notes = list(seed.notes) + ingredient_result.notes + recipe_result.notes
         self._refresh_all()
@@ -309,8 +304,75 @@ class MainWindow(QMainWindow):
 
         self._flash(f"{len(self._ingredients)} Zutaten, {len(self._recipes)} Rezepte geladen")
 
+    def _ensure_database(self) -> SeedResult:
+        """Legt fehlende Dateien an - aus dem Altbestand oder der Startdatenbank."""
+        try:
+            return ensure_user_database(
+                self._ingredients_path,
+                self._recipes_path,
+                legacy_dir=Path.cwd(),
+            )
+        except RepositoryError as exc:
+            QMessageBox.critical(self, "Daten konnten nicht angelegt werden", str(exc))
+            return SeedResult()
+
+    def _load_ingredient_file(self) -> tuple[IngredientStore, LoadResult]:
+        """Lädt die Zutaten; eine unlesbare Datei wird durch die Startdatenbank ersetzt."""
+        try:
+            return load_user_ingredients(self._ingredients_path)
+        except RepositoryError as exc:
+            consequence = "Die Zutaten werden neu aus der Startdatenbank angelegt."
+            if not self._set_aside_unreadable(self._ingredients_path, exc, consequence):
+                return IngredientStore(), LoadResult()
+        self._ensure_database()
+        try:
+            return load_user_ingredients(self._ingredients_path)
+        except RepositoryError as exc:  # pragma: no cover - frisch angelegte Datei
+            log.warning("Neu angelegte Zutatendatenbank nicht lesbar: %s", exc)
+            return IngredientStore(), LoadResult()
+
+    def _load_recipe_file(self) -> tuple[RecipeStore, LoadResult]:
+        """Lädt die Rezepte; ohne lesbare Datei startet das Programm ohne Rezepte."""
+        try:
+            return load_recipes(self._recipes_path, self._ingredients)
+        except RepositoryError as exc:
+            self._set_aside_unreadable(
+                self._recipes_path, exc, "Das Programm startet ohne Rezepte."
+            )
+            return RecipeStore(), LoadResult()
+
+    def _set_aside_unreadable(self, path: Path, exc: RepositoryError, consequence: str) -> bool:
+        """Legt eine unlesbare Datei beiseite und sagt, wo sie liegt.
+
+        Returns:
+            ``True``, wenn sie beiseiteliegt; sonst wird sie in dieser Sitzung
+            vor dem Überschreiben geschützt.
+        """
+        aside = set_aside(path)
+        if aside is None:
+            self._protected.add(path)
+            QMessageBox.critical(
+                self,
+                "Daten konnten nicht geladen werden",
+                f"{exc}\n\nDie Datei ließ sich nicht beiseitelegen. Damit sie erhalten "
+                f"bleibt, schreibt das Programm in dieser Sitzung nicht in {path.name} - "
+                "Änderungen daran gehen beim Beenden verloren.",
+            )
+            return False
+        QMessageBox.critical(
+            self,
+            "Daten konnten nicht geladen werden",
+            f"{exc}\n\nDie Datei liegt unverändert unter\n{aside}\n\n{consequence} "
+            f"Um den alten Stand zurückzuholen: die Datei reparieren und bei geschlossenem "
+            f"Programm wieder in {path.name} umbenennen.",
+        )
+        return True
+
     def _save_ingredients(self) -> bool:
         """Schreibt die Zutatendatenbank; meldet Fehler an den Anwender."""
+        if self._ingredients_path in self._protected:
+            log.warning("%s bleibt geschützt und wird nicht geschrieben", self._ingredients_path)
+            return True
         try:
             save_ingredients(self._ingredients_path, self._ingredients)
         except RepositoryError as exc:
@@ -319,6 +381,10 @@ class MainWindow(QMainWindow):
         return True
 
     def _save_recipes(self) -> bool:
+        """Schreibt die Rezeptdatenbank; meldet Fehler an den Anwender."""
+        if self._recipes_path in self._protected:
+            log.warning("%s bleibt geschützt und wird nicht geschrieben", self._recipes_path)
+            return True
         try:
             save_recipes(self._recipes_path, self._recipes)
         except RepositoryError as exc:

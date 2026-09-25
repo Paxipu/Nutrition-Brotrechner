@@ -39,6 +39,7 @@ __all__ = [
     "read_json",
     "save_ingredients",
     "save_recipes",
+    "set_aside",
     "write_json_atomic",
 ]
 
@@ -356,6 +357,32 @@ def _rotate_backup(path: Path) -> Path | None:
     except OSError as exc:
         # Eine fehlgeschlagene Sicherung darf das Speichern nicht verhindern.
         log.warning("Sicherung von %s fehlgeschlagen: %s", path, exc)
+        return None
+    return target
+
+
+def set_aside(path: Path) -> Path | None:
+    """Legt eine unlesbare Datei unverändert beiseite, neben ihren alten Platz.
+
+    Aus ``ingredients.json`` wird etwa ``ingredients.defekt-20260925_101500.json``.
+    Das Programm kann dann mit einer neuen Datei weiterarbeiten, ohne die alte
+    je zu überschreiben - sie bleibt zum Reparieren liegen, und anders als eine
+    Sicherung verschwindet sie nicht aus der Rotation.
+
+    Returns:
+        Der neue Name oder ``None``, wenn die Datei nicht umbenannt werden
+        konnte; sie liegt dann unverändert an ihrem alten Platz.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = path.with_name(f"{path.stem}.defekt-{stamp}{path.suffix}")
+    counter = 1
+    while target.exists():
+        target = path.with_name(f"{path.stem}.defekt-{stamp}_{counter:03d}{path.suffix}")
+        counter += 1
+    try:
+        path.rename(target)
+    except OSError as exc:
+        log.warning("%s ließ sich nicht beiseitelegen: %s", path, exc)
         return None
     return target
 
