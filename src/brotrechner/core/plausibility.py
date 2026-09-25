@@ -20,6 +20,7 @@ Code                Schwere   Bedeutung
                               Einwaage.
 ``dough_loss``      Warnung   Gewogener Rohteig über 10 % leichter als die
                               Einwaage.
+``portion_too_heavy``  Warnung  Eine Portion wiegt mehr als das ganze Brot.
 ==================  ========  ================================================
 
 Fehler beschreiben Zustände, die physikalisch nicht vorkommen; mit ihnen darf
@@ -104,6 +105,7 @@ def check_process(analysis: RecipeAnalysis) -> list[ProcessFinding]:
     if not weight_errors:
         findings.extend(_energy_findings(analysis))
         findings.extend(_bake_loss_findings(analysis))
+    findings.extend(_portion_findings(analysis))
 
     findings.sort(key=lambda f: -f.severity.rank)
     return findings
@@ -197,5 +199,20 @@ def _bake_loss_findings(analysis: RecipeAnalysis) -> list[ProcessFinding]:
             Severity.WARNING,
             f"Backverlust {loss:.1f} % ist ungewöhnlich; üblich sind etwa 10 bis 25 %. "
             f"Stimmen Rohteig- und Brotgewicht?",
+        )
+    ]
+
+
+def _portion_findings(analysis: RecipeAnalysis) -> list[ProcessFinding]:
+    """Eine Portion, die schwerer ist als das Brot, aus dem sie stammt."""
+    portion = analysis.portion
+    if portion is None or portion.fits_into(analysis.baked_weight_g):
+        return []
+    return [
+        ProcessFinding(
+            "portion_too_heavy",
+            Severity.WARNING,
+            f"Die Portion „{portion.title}“ wiegt mehr als das ganze Brot "
+            f"({analysis.baked_weight_g:.0f} g). Stimmt das Portionsgewicht?",
         )
     ]

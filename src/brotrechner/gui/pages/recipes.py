@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from brotrechner.core.analysis import analyze, resolve_items
+from brotrechner.core.analysis import RecipeAnalysis, analyze, resolve_items
 from brotrechner.core.models import Ingredient, Recipe
 from brotrechner.gui.models.recipe_model import RecipeListModel
 from brotrechner.gui.theme import SPACING, Tokens
@@ -206,6 +206,7 @@ class RecipesPage(QWidget):
             baked_weight_g=recipe.baked_weight_g,
             dough_weight_g=recipe.dough_weight_g,
             energy_kwh=recipe.energy_kwh,
+            portion=recipe.portion,
         )
         t = self._tokens
 
@@ -264,6 +265,7 @@ class RecipesPage(QWidget):
                 f"Ballaststoffe {format_number(n.fiber)} g · "
                 f"Salz {format_number(n.salt, 2)} g</p>"
             )
+            nutrition += _portion_html(analysis)
 
         cost = (
             "<p style='margin:12px 0 2px 0'><b>Kosten zu heutigen Preisen</b></p>"
@@ -294,3 +296,17 @@ class RecipesPage(QWidget):
                 f"<p style='margin:0;color:{t.text_muted}'><i>{text}</i></p>"
             )
         return head + history + table + nutrition + cost + warning + notes
+
+
+def _portion_html(analysis: RecipeAnalysis) -> str:
+    """Brennwert und Kosten je Portion, dazu die Zahl der Portionen - ohne Portion nichts."""
+    portion = analysis.portion
+    per_portion = analysis.per_portion
+    if portion is None or per_portion is None:
+        return ""
+    parts = [f"{per_portion.energy_kcal:.0f} kcal"]
+    if analysis.cost_per_portion is not None:
+        parts.append(format_currency(analysis.cost_per_portion))
+    if portion.fits_into(analysis.baked_weight_g):
+        parts.append(f"ergibt {portion.count_text(analysis.baked_weight_g)}")
+    return f"<p style='margin:2px 0 0 0'>Je {escape(portion.title)}: {' · '.join(parts)}</p>"

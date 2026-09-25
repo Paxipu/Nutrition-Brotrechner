@@ -37,6 +37,7 @@ from typing import Final
 
 from brotrechner.core.models import Ingredient, RecipeItem
 from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients
+from brotrechner.core.portions import Portion
 from brotrechner.core.rounding import as_declarable
 from brotrechner.core.tolerances import ValueRange, nutrient_ranges
 
@@ -149,9 +150,41 @@ class RecipeAnalysis:
     energy_kwh: float = 0.0
     energy_price: float = DEFAULT_ENERGY_PRICE_EUR_PER_KWH
 
+    # Portion
+    portion: Portion | None = None
+    """Portion für Angaben je Scheibe oder Stück; ``None`` heißt nur je 100 g."""
+
     @property
     def is_empty(self) -> bool:
         return not self.lines
+
+    @property
+    def per_portion(self) -> Nutrients | None:
+        """Nährwerte je Portion, aus den ungerundeten Werten je 100 g."""
+        portion = self._usable_portion()
+        return portion.nutrients(self.per_100g) if portion else None
+
+    @property
+    def cost_per_portion(self) -> float | None:
+        """Kosten je Portion in Euro."""
+        portion = self._usable_portion()
+        return portion.cost(self.cost_per_100g) if portion else None
+
+    @property
+    def portion_count(self) -> float | None:
+        """Wie viele Portionen das Brot ergibt."""
+        portion = self._usable_portion()
+        return portion.count(self.baked_weight_g) if portion else None
+
+    def _usable_portion(self) -> Portion | None:
+        """Die Portion, sofern es Werte je Portion gibt.
+
+        Dafür braucht es Zutaten und das Gewicht des Brots - ohne sie gibt es
+        auch keine Werte je 100 g.
+        """
+        if self.is_empty or self.baked_weight_g <= 0:
+            return None
+        return self.portion
 
     @property
     def cost_per_kg(self) -> float:
@@ -218,6 +251,7 @@ def analyze(
     dough_weight_g: float = 0.0,
     energy_kwh: float = 0.0,
     energy_price: float = DEFAULT_ENERGY_PRICE_EUR_PER_KWH,
+    portion: Portion | None = None,
 ) -> RecipeAnalysis:
     """Wertet ein Rezept vollständig aus.
 
@@ -230,6 +264,7 @@ def analyze(
             wirkt sich Teig, der in der Schüssel bleibt, korrekt aus.
         energy_kwh: Energieverbrauch des Backvorgangs.
         energy_price: Strompreis in Euro je kWh.
+        portion: Portion für die Angaben je Scheibe oder Stück.
 
     Returns:
         Auswertung; bei leerer Zutatenliste ein leeres :class:`RecipeAnalysis`.
@@ -244,6 +279,7 @@ def analyze(
             baked_weight_g=max(0.0, baked_weight_g),
             energy_kwh=energy_kwh,
             energy_price=energy_price,
+            portion=portion,
         )
 
     weighed = sum(item.amount_g for item in items)
@@ -306,6 +342,7 @@ def analyze(
         cost_per_100g=total_cost / baked_weight_g * 100.0 if baked_weight_g > 0 else 0.0,
         energy_kwh=energy_kwh,
         energy_price=energy_price,
+        portion=portion,
     )
 
 

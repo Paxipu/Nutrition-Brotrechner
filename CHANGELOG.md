@@ -186,6 +186,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   jedes Mal sieben Tage vorzuschlagen. Der Ausgabeordner lässt sich unter
   „Datei → Ausgabeordner wählen …“ festlegen; bisher nur durch Bearbeiten
   der Einstellungsdatei.
+- **Nährwerte und Kosten je Portion.** Zu einem Rezept gehört auf Wunsch eine
+  Portion: eine Bezeichnung (Scheibe, Stück, Brötchen oder frei eingetragen)
+  und ihr Gewicht. Der Rechner nennt dann, wie viele Portionen das Brot ergibt
+  („ergibt ca. 19 Scheiben“), und den Preis je Portion; die Nährwerttafel
+  schaltet zwischen „je 100 g“ und „je Scheibe (45 g)“ um. Ampel und
+  Bandbreite bleiben dabei je 100 g - einen anderen Bezug gibt es für sie
+  nicht. Auch die Rezeptvorschau nennt Brennwert, Preis und Zahl der
+  Portionen. Eine Portion, die schwerer ist als das ganze Brot, meldet die
+  Plausibilitätsprüfung. Rezepte älterer Versionen haben keine Portion; eine
+  unlesbare Portionsangabe kostet nicht das ganze Rezept.
 
 ### Geändert
 

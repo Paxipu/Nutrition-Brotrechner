@@ -17,6 +17,8 @@ Läuft unter **Linux, Windows und macOS**.
 **Rechnen.** Zutaten zusammenstellen, Gewicht des fertigen Brots eintragen –
 Nährwerte je 100 g, Bäckerprozent, Teigausbeute, Hydration und Kosten stehen
 sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
+Mit dem Gewicht einer Portion – Scheibe, Stück, Brötchen – kommen Nährwerte
+und Preis je Portion hinzu und wie viele Portionen das Brot ergibt.
 
 **Etikettieren.** Ein Nährwert-Etikett in vier Formaten oder einem eigenen
 (30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern,

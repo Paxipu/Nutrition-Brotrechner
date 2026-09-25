@@ -18,6 +18,7 @@ from typing import Any, Final
 
 from brotrechner.core.allergens import Allergen, allergen_keys, parse_allergens
 from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.portions import Portion
 
 __all__ = [
     "CATEGORY_LABELS",
@@ -435,6 +436,9 @@ class Recipe:
     last_baked_on: date | None = None
     last_best_before: date | None = None
 
+    #: Portion für die Angaben je Scheibe oder Stück; ``None`` heißt: nur je 100 g.
+    portion: Portion | None = None
+
     @property
     def total_amount_g(self) -> float:
         """Summe aller eingewogenen Zutaten."""
@@ -455,6 +459,8 @@ class Recipe:
             dough_weight_g=self.dough_weight_g * factor,
             energy_kwh=self.energy_kwh,  # Backenergie skaliert nicht linear mit der Menge
             notes=self.notes,
+            # Ein doppeltes Rezept ergibt mehr Scheiben, nicht dickere.
+            portion=self.portion,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -471,6 +477,7 @@ class Recipe:
             "last_best_before": (
                 self.last_best_before.isoformat() if self.last_best_before else None
             ),
+            "portion": self.portion.to_dict() if self.portion else None,
         }
 
     @classmethod
@@ -489,6 +496,7 @@ class Recipe:
             modified_at=_parse_datetime(data.get("modified_at") or data.get("created_at")),
             last_baked_on=_parse_date(data.get("last_baked_on")),
             last_best_before=_parse_date(data.get("last_best_before")),
+            portion=Portion.from_dict(data.get("portion")),
         )
 
 
