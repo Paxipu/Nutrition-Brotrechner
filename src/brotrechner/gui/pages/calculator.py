@@ -87,6 +87,9 @@ class CalculatorPage(QWidget):
         self._recalc_timer.timeout.connect(self._recalculate)
 
         self._build_ui()
+        # Fingerabdruck des zuletzt geladenen, gespeicherten oder geleerten
+        # Stands; weicht der Rechner davon ab, ginge beim Leeren etwas verloren.
+        self._saved_state: tuple[object, ...] = ()
         self._connect()
         self._recalculate()
 
@@ -365,6 +368,7 @@ class CalculatorPage(QWidget):
 
         self._items_model.set_items(resolved)
         self._recalculate()
+        self.mark_saved()
         return missing
 
     def to_recipe(self) -> Recipe:
@@ -393,6 +397,30 @@ class CalculatorPage(QWidget):
         self.spin_dough.setValue(0.0)
         self.spin_kwh.setValue(0.0)
         self._recalculate()
+        self.mark_saved()
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        """Ginge beim Leeren etwas verloren?
+
+        Ein Rechner ohne Zutaten hat nichts zu verlieren - ein Rezept ohne
+        Zutaten lässt sich ohnehin nicht speichern.
+        """
+        return bool(self._items_model.items) and self._state() != self._saved_state
+
+    def mark_saved(self) -> None:
+        """Merkt sich den jetzigen Stand als gespeichert."""
+        self._saved_state = self._state()
+
+    def _state(self) -> tuple[object, ...]:
+        """Fingerabdruck dessen, was ein Speichern festhielte."""
+        return (
+            self.txt_name.text().strip(),
+            tuple((item.ingredient.key, item.amount_g) for item in self._items_model.items),
+            self.spin_baked.value(),
+            self.spin_dough.value(),
+            self.spin_kwh.value(),
+        )
 
     # ── Bedienung ─────────────────────────────────────────────────────────
 

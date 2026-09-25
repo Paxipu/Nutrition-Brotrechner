@@ -515,24 +515,56 @@ class MainWindow(QMainWindow):
         else:
             self.btn_label.setToolTip("Etikett anzeigen, speichern oder drucken")
 
+    def _confirm_discard(self) -> bool:
+        """Fragt nach, bevor ungespeicherte Arbeit im Rechner verloren geht.
+
+        Bisher verwarfen „Neu / leeren“, das Laden eines anderen Rezepts und
+        das Beenden den Rechner ohne ein Wort.
+
+        Returns:
+            ``True``, wenn weitergemacht werden darf.
+        """
+        page = self.page_calculator
+        if not page.has_unsaved_changes:
+            return True
+        buttons = QMessageBox.StandardButton
+        answer = QMessageBox.question(
+            self,
+            "Ungespeicherte Änderungen",
+            f"„{page.recipe_name}“ im Rechner hat ungespeicherte Änderungen.\n\nVorher speichern?",
+            buttons.Save | buttons.Discard | buttons.Cancel,
+            buttons.Save,
+        )
+        if confirmed(answer, buttons.Save):
+            return self._on_save_recipe()
+        # Abbrechen, Escape und jede unerwartete Antwort lassen alles, wie es ist.
+        return confirmed(answer, buttons.Discard)
+
     def _on_new_recipe(self) -> None:
+        if not self._confirm_discard():
+            return
         self.page_calculator.clear()
         self.nav.setCurrentRow(0)
         self._flash("Rechner geleert")
 
-    def _on_save_recipe(self) -> None:
+    def _on_save_recipe(self) -> bool:
+        """Speichert den Rechner als Rezept.
+
+        Returns:
+            ``True``, wenn gespeichert wurde.
+        """
         recipe = self.page_calculator.to_recipe()
         if not recipe.items:
             QMessageBox.information(
                 self, "Nichts zu speichern", "Bitte zuerst Zutaten in den Rechner eintragen."
             )
-            return
+            return False
 
         name, accepted = QInputDialog.getText(
             self, "Rezept speichern", "Name des Rezepts:", text=recipe.name
         )
         if not accepted or not name.strip():
-            return
+            return False
         recipe.name = name.strip()
 
         if recipe.name in self._recipes:
@@ -545,7 +577,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.No,
             )
             if not confirmed(answer):
-                return
+                return False
             existing = self._recipes.get(recipe.name)
             if existing is not None:
                 # Was nicht aus dem Rechner kommt, gehört zur Geschichte des
@@ -560,17 +592,24 @@ class MainWindow(QMainWindow):
             recipe.notes = notes_dialog.notes
 
         self._recipes.add(recipe, replace_existing=True)
-        if self._save_recipes():
-            self._refresh_all()
-            # Auf die Rezepteseite wechseln und den frischen Eintrag markieren:
-            # Ohne diese Rückmeldung bleibt offen, ob das Speichern geklappt hat.
-            self.nav.setCurrentRow(2)
-            self.page_recipes.select_recipe(recipe.name)
-            self._flash(f"Rezept „{recipe.name}“ gespeichert in {self._recipes_path}")
+        if not self._save_recipes():
+            return False
+        # Der Rechner trägt jetzt den gespeicherten Namen - und gilt als gespeichert.
+        self.page_calculator.txt_name.setText(recipe.name)
+        self.page_calculator.mark_saved()
+        self._refresh_all()
+        # Auf die Rezepteseite wechseln und den frischen Eintrag markieren:
+        # Ohne diese Rückmeldung bleibt offen, ob das Speichern geklappt hat.
+        self.nav.setCurrentRow(2)
+        self.page_recipes.select_recipe(recipe.name)
+        self._flash(f"Rezept „{recipe.name}“ gespeichert in {self._recipes_path}")
+        return True
 
     def _on_load_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)
         if recipe is None:  # pragma: no cover - Liste war veraltet
+            return
+        if not self._confirm_discard():
             return
         missing = self.page_calculator.load_recipe(recipe)
         self.nav.setCurrentRow(0)
@@ -982,7 +1021,10 @@ class MainWindow(QMainWindow):
         ).exec()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt-Vertrag
-        """Speichert Einstellungen und Daten beim Beenden."""
+        """Speichert Einstellungen und Daten beim Beenden - nach Rückfrage."""
+        if not self._confirm_discard():
+            event.ignore()
+            return
         self._settings.window_geometry = bytes(self.saveGeometry().toBase64().data()).decode(
             "ascii"
         )

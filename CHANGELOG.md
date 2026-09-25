@@ -69,6 +69,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
   mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
   beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
+- **Ungespeicherte Arbeit im Rechner ging ohne Rückfrage verloren.** „Neu /
+  leeren“, das Laden eines anderen Rezepts und das Beenden verwarfen den
+  Rechner ohne ein Wort. Jetzt fragt das Programm „Speichern, Verwerfen oder
+  Abbrechen?“, sobald der Rechner vom zuletzt geladenen oder gespeicherten
+  Stand abweicht - ein neuer Preis in der Zutatendatenbank zählt dabei nicht
+  als Änderung. Wer beim Speichern den Namen abbricht, behält den Rechner.
 - **Ein Tippfehler in `settings.json` verhinderte den Start.** Jeder Wert
   wurde ungeprüft übernommen: `"theme": "blau"` ließ das Programm mit
   `ValueError` abbrechen, ein Strompreis `"abc"` scheiterte erst beim
