@@ -7,6 +7,8 @@ der Dialog.
 
 from __future__ import annotations
 
+import dataclasses
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -28,8 +30,10 @@ from brotrechner.export.printing import (
     one_per_page,
     sheet_placements,
 )
+from brotrechner.gui.qt_compat import enum_or_none, select_data
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
+from brotrechner.settings import LabelPreferences
 
 __all__ = ["PrintSettingsCard"]
 
@@ -196,6 +200,47 @@ class PrintSettingsCard(Card):
             f"{_labels(count)} auf {pages} {sheet if pages == 1 else sheets} "
             f"({layout.per_page} je {sheet})"
         )
+
+    def restore(self, prefs: LabelPreferences) -> None:
+        """Stellt Druckart und Bogenraster vom letzten Mal wieder her."""
+        mode = enum_or_none(PrintMode, prefs.print_mode)
+        if mode is not None:
+            select_data(self.cmb_mode, mode)
+        self.chk_rotate.setChecked(prefs.rotate)
+        self.spin_columns.setValue(prefs.sheet_columns)
+        self.spin_rows.setValue(prefs.sheet_rows)
+        self.spin_margin_left.setValue(prefs.sheet_margin_left_mm)
+        self.spin_margin_top.setValue(prefs.sheet_margin_top_mm)
+        self.spin_gap_x.setValue(prefs.sheet_gap_x_mm)
+        self.spin_gap_y.setValue(prefs.sheet_gap_y_mm)
+        # Zuletzt: Seine Obergrenze hängt am Raster darüber.
+        self.spin_first.setValue(prefs.sheet_next_free)
+
+    def remember(self, prefs: LabelPreferences) -> LabelPreferences:
+        """Die gemerkten Werte, ergänzt um Druckart und Bogenraster."""
+        return dataclasses.replace(
+            prefs,
+            print_mode=self.mode().value,
+            rotate=self.chk_rotate.isChecked(),
+            sheet_columns=self.spin_columns.value(),
+            sheet_rows=self.spin_rows.value(),
+            sheet_margin_left_mm=self.spin_margin_left.value(),
+            sheet_margin_top_mm=self.spin_margin_top.value(),
+            sheet_gap_x_mm=self.spin_gap_x.value(),
+            sheet_gap_y_mm=self.spin_gap_y.value(),
+            sheet_next_free=self.spin_first.value(),
+        )
+
+    def advance_after_print(self) -> None:
+        """Rückt beim Etikettenbogen das erste freie Etikett hinter die gedruckten.
+
+        So beginnt der nächste Druck auf dem angebrochenen Bogen dort, wo der
+        letzte aufgehört hat.
+        """
+        if self.mode() != PrintMode.SHEET:
+            return
+        used = self.spin_first.value() - 1 + self.spin_count.value()
+        self.spin_first.setValue(used % self.sheet_layout().per_page + 1)
 
     # ── Intern ────────────────────────────────────────────────────────────
 

@@ -19,9 +19,14 @@ darüber, dass sie im ganzen Paket eingehalten wird.
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QMessageBox
+from enum import Enum
+from typing import TypeVar
 
-__all__ = ["confirmed"]
+from PySide6.QtWidgets import QComboBox, QMessageBox
+
+__all__ = ["confirmed", "enum_or_none", "select_data"]
+
+_E = TypeVar("_E", bound=Enum)
 
 
 def confirmed(
@@ -39,3 +44,24 @@ def confirmed(
         ``True``, wenn der Anwender genau diese Schaltfläche angeklickt hat.
     """
     return int(answer) == int(button)
+
+
+def enum_or_none(kind: type[_E], value: object) -> _E | None:
+    """Das Enum-Mitglied zu einem gemerkten Wert - ``None``, wenn es keins gibt.
+
+    Gemerkte Einstellungen stammen aus einer Datei, die sich von Hand
+    bearbeiten lässt; ein unbekannter Wert darf nichts zum Absturz bringen.
+    """
+    try:
+        return kind(value)
+    except ValueError:
+        return None
+
+
+def select_data(combo: QComboBox, data: object) -> bool:
+    """Wählt den Eintrag mit diesem Datenwert; ``False``, wenn es ihn nicht gibt."""
+    index = combo.findData(data)
+    if index < 0:
+        return False
+    combo.setCurrentIndex(index)
+    return True

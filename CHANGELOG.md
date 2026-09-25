@@ -155,6 +155,19 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nicht aufs Blatt passt, wird angezeigt und verhindert Druck und
   Druckvorschau. Jedes Etikett behält seine Originalgröße.
 
+- **Das Programm merkt sich, was man eingestellt hat.** Der Strompreis stand
+  schon in den Einstellungen, der Rechner begann aber bei jedem Start mit der
+  Vorgabe. Jetzt bleiben er und die Einstellungen des Etikettdialogs
+  erhalten: Format samt eigenem Format, Farbe, Auflösung, Fußzeile, die
+  Schalter für Backdatum, Ballaststoffe und Referenzhinweis, Verkaufsmodus mit
+  Hersteller und Lagerhinweis, Druckart und Bogenraster. Nach einem Druck auf
+  einen Etikettenbogen rückt „Beginnen bei“ hinter die gedruckten Etiketten -
+  der angebrochene Bogen lässt sich beim nächsten Mal einfach weiterbedrucken.
+  Die Haltbarkeit übernimmt der Dialog vom letzten Etikett des Rezepts, statt
+  jedes Mal sieben Tage vorzuschlagen. Der Ausgabeordner lässt sich unter
+  „Datei → Ausgabeordner wählen …“ festlegen; bisher nur durch Bearbeiten
+  der Einstellungsdatei.
+
 ### Geändert
 
 - **„Brennwert“ statt „Energie“** auf dem Etikett, im Bericht, in der CSV und

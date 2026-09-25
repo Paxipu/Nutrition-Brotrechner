@@ -403,6 +403,11 @@ class TestPersistence:
             def exec(self) -> int:
                 return 1
 
+            def preferences(self) -> object:
+                from brotrechner.settings import LabelPreferences
+
+                return LabelPreferences()
+
             label_was_created = created
             baked_on = baked
             best_before = baked + timedelta(days=7)

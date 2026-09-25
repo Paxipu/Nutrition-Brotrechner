@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self._restore_geometry()
         self._load_data()
+        self._restore_energy_price()
 
     # ── Aufbau ────────────────────────────────────────────────────────────
 
@@ -196,6 +197,7 @@ class MainWindow(QMainWindow):
         self._add_action(
             file_menu, "Datenverzeichnis öffnen", self._on_open_data_dir, "Ctrl+Shift+O"
         )
+        self._add_action(file_menu, "Ausgabeordner wählen …", self._on_choose_export_dir)
         file_menu.addSeparator()
         self._add_action(file_menu, "Zutaten als CSV …", self._on_export_csv)
         self._add_action(file_menu, "PDF-Bericht …", self._on_report, "Ctrl+P")
@@ -833,6 +835,33 @@ class MainWindow(QMainWindow):
 
     # ── Ausgabe ───────────────────────────────────────────────────────────
 
+    def _restore_energy_price(self) -> None:
+        """Setzt den gemerkten Strompreis und merkt sich jede Änderung.
+
+        Bisher stand der Preis zwar in den Einstellungen, der Rechner begann
+        aber bei jedem Start wieder mit der Vorgabe.
+        """
+        spin = self.page_calculator.spin_price
+        spin.setValue(self._settings.energy_price)
+        spin.valueChanged.connect(self._on_energy_price_changed)
+
+    def _on_energy_price_changed(self, price: float) -> None:
+        self._settings.energy_price = price
+
+    def _save_settings(self) -> None:
+        save_settings(self._settings_path, self._settings)
+
+    def _on_choose_export_dir(self) -> None:
+        """Legt den Ordner fest, in dem Etiketten, Berichte und CSV landen."""
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Ausgabeordner wählen", str(self._export_dir())
+        )
+        if not chosen:
+            return
+        self._settings.export_dir = chosen
+        self._save_settings()
+        self._flash(f"Ausgaben landen jetzt in {chosen}")
+
     def _export_dir(self) -> Path:
         """Standardordner für Ausgaben, bei Bedarf angelegt."""
         configured = self._settings.export_dir
@@ -858,9 +887,14 @@ class MainWindow(QMainWindow):
             recipe_name=name,
             default_dir=self._export_dir(),
             last_baked_on=stored.last_baked_on if stored else None,
+            last_best_before=stored.last_best_before if stored else None,
+            preferences=self._settings.label,
             parent=self,
         )
         dialog.exec()
+        # Gestaltung, Verkauf und Druck gelten auch beim nächsten Etikett.
+        self._settings.label = dialog.preferences()
+        self._save_settings()
         self._record_baking_day(stored, dialog)
 
     def _record_baking_day(self, recipe: Recipe | None, dialog: LabelDialog) -> None:
@@ -952,7 +986,7 @@ class MainWindow(QMainWindow):
         self._settings.window_geometry = bytes(self.saveGeometry().toBase64().data()).decode(
             "ascii"
         )
-        save_settings(self._settings_path, self._settings)
+        self._save_settings()
         self._save_ingredients()
         self._save_recipes()
         super().closeEvent(event)

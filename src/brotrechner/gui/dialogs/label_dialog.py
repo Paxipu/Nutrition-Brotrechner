@@ -62,10 +62,11 @@ from brotrechner.export.label import (
     render_label,
 )
 from brotrechner.gui.printing import paint_labels, paper_mm, prepare_printer
-from brotrechner.gui.qt_compat import confirmed
+from brotrechner.gui.qt_compat import confirmed, enum_or_none, select_data
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
 from brotrechner.gui.widgets.print_settings import PrintSettingsCard
+from brotrechner.settings import LabelPreferences
 
 __all__ = ["LabelDialog", "pil_to_qimage"]
 
@@ -85,6 +86,9 @@ _PREVIEW_DPI = 110
 
 #: Voreingestellte Haltbarkeit eines frisch gebackenen Brots.
 _DEFAULT_SHELF_LIFE_DAYS = 7
+
+#: Gemerkter Wert für "Eigenes Format".
+_CUSTOM_SIZE = "custom"
 
 
 def _to_date(value: QDate) -> date:
@@ -127,6 +131,8 @@ class LabelDialog(QDialog):
         recipe_name: str,
         default_dir: Path,
         last_baked_on: date | None = None,
+        last_best_before: date | None = None,
+        preferences: LabelPreferences | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -158,6 +164,14 @@ class LabelDialog(QDialog):
         self.setMinimumSize(880, 680)
 
         self._build_ui(recipe_name)
+        # Beim Wiederherstellen löst jedes Feld ein Neuzeichnen aus - hier
+        # genügt eines am Ende.
+        self._rendering = True
+        try:
+            self._apply_preferences(preferences or LabelPreferences())
+            self._apply_shelf_life(last_baked_on, last_best_before)
+        finally:
+            self._rendering = False
         self._refresh()
 
     # ── Ergebnis für den Aufrufer ─────────────────────────────────────────
@@ -176,6 +190,69 @@ class LabelDialog(QDialog):
     def best_before(self) -> date | None:
         """Mindesthaltbarkeit, sofern angehakt."""
         return self._best_before()
+
+    def preferences(self) -> LabelPreferences:
+        """Die Einstellungen, die sich das Programm bis zum nächsten Mal merkt.
+
+        Titel, Untertitel und Daten gehören zum Rezept und bleiben außen vor.
+        """
+        size = self.cmb_size.currentData()
+        prefs = LabelPreferences(
+            size=size.value if isinstance(size, LabelSize) else _CUSTOM_SIZE,
+            custom_width_mm=self.spin_width.value(),
+            custom_height_mm=self.spin_height.value(),
+            theme=self.cmb_theme.currentData().value,
+            dpi=self.cmb_dpi.currentData(),
+            footer=self.txt_footer.text(),
+            show_date=self.chk_date.isChecked(),
+            show_fiber=self.chk_fiber.isChecked(),
+            show_reference_hint=self.chk_reference.isChecked(),
+            for_sale=self.chk_for_sale.isChecked(),
+            producer=self.txt_producer.toPlainText(),
+            storage_hint=self.txt_storage.text(),
+        )
+        return self.print_card.remember(prefs)
+
+    # ── Gemerktes wiederherstellen ────────────────────────────────────────
+
+    def _apply_preferences(self, prefs: LabelPreferences) -> None:
+        """Stellt die Bedienelemente auf die gemerkten Werte.
+
+        Ein unbekannter Wert - etwa ein Format, das es nicht mehr gibt - lässt
+        das Feld bei seiner Vorgabe.
+        """
+        if prefs.size == _CUSTOM_SIZE:
+            select_data(self.cmb_size, None)
+        else:
+            size = enum_or_none(LabelSize, prefs.size)
+            if size is not None:
+                select_data(self.cmb_size, size)
+        self.spin_width.setValue(prefs.custom_width_mm)
+        self.spin_height.setValue(prefs.custom_height_mm)
+        theme = enum_or_none(LabelTheme, prefs.theme)
+        if theme is not None:
+            select_data(self.cmb_theme, theme)
+        select_data(self.cmb_dpi, prefs.dpi)
+        self.txt_footer.setText(prefs.footer)
+        self.chk_date.setChecked(prefs.show_date)
+        self.chk_fiber.setChecked(prefs.show_fiber)
+        self.chk_reference.setChecked(prefs.show_reference_hint)
+        self.txt_producer.setPlainText(prefs.producer)
+        self.txt_storage.setText(prefs.storage_hint)
+        self.chk_for_sale.setChecked(prefs.for_sale)
+        self.print_card.restore(prefs)
+
+    def _apply_shelf_life(self, baked: date | None, best_before: date | None) -> None:
+        """Übernimmt die Haltbarkeit vom letzten Etikett des Rezepts.
+
+        Wer ein Brot mit 21 Tagen Haltbarkeit etikettiert hat, will beim
+        nächsten Mal wieder 21 Tage - nicht jedes Mal die Vorgabe von sieben.
+        """
+        if baked is None or best_before is None or best_before < baked:
+            return
+        self._shelf_life_days = (best_before - baked).days
+        self.chk_best_before.setChecked(True)
+        self._on_baked_changed(self.date_baked.date())
 
     # ── Aufbau ────────────────────────────────────────────────────────────
 
@@ -759,6 +836,7 @@ class LabelDialog(QDialog):
             # Die Druckvorschau zählt bewusst nicht: Erst der wirkliche Druck
             # macht den eingestellten Tag zum Backtag des Rezepts.
             self._label_was_created = True
+            self.print_card.advance_after_print()
 
     def _on_print_preview(self) -> None:
         if not self._print_layout_ok():
