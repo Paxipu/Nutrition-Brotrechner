@@ -207,6 +207,7 @@ class LabelDialog(QDialog):
             show_date=self.chk_date.isChecked(),
             show_fiber=self.chk_fiber.isChecked(),
             show_reference_hint=self.chk_reference.isChecked(),
+            show_portion=self.chk_portion.isChecked(),
             for_sale=self.chk_for_sale.isChecked(),
             producer=self.txt_producer.toPlainText(),
             storage_hint=self.txt_storage.text(),
@@ -237,6 +238,7 @@ class LabelDialog(QDialog):
         self.chk_date.setChecked(prefs.show_date)
         self.chk_fiber.setChecked(prefs.show_fiber)
         self.chk_reference.setChecked(prefs.show_reference_hint)
+        self.chk_portion.setChecked(prefs.show_portion)
         self.txt_producer.setPlainText(prefs.producer)
         self.txt_storage.setText(prefs.storage_hint)
         self.chk_for_sale.setChecked(prefs.for_sale)
@@ -379,6 +381,7 @@ class LabelDialog(QDialog):
         self.chk_fiber.setChecked(True)
         self.chk_reference = QCheckBox("Hinweis auf die Referenzmenge")
         self.chk_reference.setChecked(True)
+        self.chk_portion = self._build_portion_check()
 
         for widget in (
             self.chk_date,
@@ -389,6 +392,7 @@ class LabelDialog(QDialog):
             self.chk_ingredients,
             self.chk_fiber,
             self.chk_reference,
+            self.chk_portion,
         ):
             content.add_widget(widget)
         cards.addWidget(content)
@@ -463,6 +467,7 @@ class LabelDialog(QDialog):
             self.chk_fiber,
             self.chk_reference,
             self.chk_best_before,
+            self.chk_portion,
         ):
             check.toggled.connect(self._refresh)
         self.chk_best_before.toggled.connect(self.date_best_before.setEnabled)
@@ -477,6 +482,30 @@ class LabelDialog(QDialog):
         self.btn_print.clicked.connect(self._on_print)
         self.btn_preview_print.clicked.connect(self._on_print_preview)
         self.btn_close.clicked.connect(self.reject)
+
+    def _build_portion_check(self) -> QCheckBox:
+        """Schalter für die Spalte je Portion - nur mit einer brauchbaren Portion."""
+        portion = self._analysis.portion
+        check = QCheckBox(f"Nährwerte je {portion.title}" if portion else "Nährwerte je Portion")
+        check.setChecked(True)
+        if portion is None:
+            check.setEnabled(False)
+            check.setToolTip(
+                "Mit einem Gewicht unter „Portion“ im Rechner stehen die Nährwerte\n"
+                "zusätzlich je Scheibe oder Stück auf dem Etikett."
+            )
+        elif not portion.fits_into(self._analysis.baked_weight_g):
+            check.setEnabled(False)
+            check.setToolTip(
+                "Die Portion ist schwerer als das ganze Brot - bitte das\n"
+                "Portionsgewicht im Rechner prüfen."
+            )
+        else:
+            check.setToolTip(
+                "Zweite Spalte neben den Werten je 100 g, darunter die Zahl der\n"
+                "Portionen (Artikel 33 VO (EU) Nr. 1169/2011)."
+            )
+        return check
 
     def _on_size_changed(self) -> None:
         """Blendet die Maßfelder ein, wenn das eigene Format gewählt ist."""
@@ -596,6 +625,11 @@ class LabelDialog(QDialog):
             for_sale=for_sale,
             producer=self.txt_producer.toPlainText().strip() if for_sale else "",
             storage_hint=self.txt_storage.text().strip() if for_sale else "",
+            portion=(
+                self._analysis.portion
+                if self.chk_portion.isEnabled() and self.chk_portion.isChecked()
+                else None
+            ),
         )
 
     def _label_mm(self) -> tuple[float, float]:

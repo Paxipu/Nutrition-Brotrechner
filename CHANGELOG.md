@@ -208,6 +208,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Zahl der Portionen in den Eckdaten und den Preis je Portion. Die
   Bezeichnung einer Portion hat höchstens 24 Zeichen, damit sie in die
   Tabellenköpfe passt.
+- **Nährwerte je Portion auf dem Etikett.** Hat das Rezept eine Portion,
+  steht in der Nährwerttabelle neben „je 100 g“ eine Spalte „je Scheibe
+  (45 g)“ und darunter „Ergibt ca. 22 Scheiben“ - Artikel 33 VO (EU)
+  Nr. 1169/2011 verlangt zur Angabe je Portion die Zahl der Portionen. Wird
+  es eng, steht der Brennwert zweizeilig (kJ über kcal). Passen beide Spalten
+  nicht nebeneinander auf das Format, fehlt die Spalte je Portion, und der
+  Dialog sagt das. Der Schalter „Nährwerte je Scheibe (45 g)“ im Etikettdialog
+  wird gemerkt.
 
 ### Geändert
 

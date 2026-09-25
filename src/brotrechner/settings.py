@@ -53,6 +53,8 @@ class LabelPreferences:
     show_date: bool = True
     show_fiber: bool = True
     show_reference_hint: bool = True
+    #: Nährwerte zusätzlich je Portion, sofern das Rezept eine hat.
+    show_portion: bool = True
     for_sale: bool = False
     producer: str = ""
     storage_hint: str = ""

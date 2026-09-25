@@ -9,7 +9,9 @@ Aufbau und Reihenfolge der Nährwerttabelle folgen Anhang XV der VO (EU)
 Nr. 1169/2011: Brennwert (kJ und kcal), Fett, davon gesättigte Fettsäuren,
 Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz. Die
 Werte sind nach der Leitlinie der EU-Kommission gerundet
-(:mod:`brotrechner.core.rounding`).
+(:mod:`brotrechner.core.rounding`). Mit einer Portion
+(:attr:`LabelOptions.portion`) steht neben "je 100 g" eine zweite Spalte, und
+darunter die Zahl der Portionen (Artikel 33).
 
 Preise erscheinen bewusst nie auf dem Etikett. Es taugt für verschenkte Brote
 wie für den Verkauf: Im Verkaufsmodus (:attr:`LabelOptions.for_sale`) hält
@@ -31,6 +33,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from brotrechner.core.labeling import Run, parse_emphasis
 from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.portions import Portion
 from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.core.sales import SaleIssue
 from brotrechner.export.fonts import Font, FontSet, ink_height, load_font_set
@@ -81,6 +84,9 @@ MAX_LABEL_PIXELS: Final = 40_000_000
 
 _NET_WEIGHT_WORD: Final = "Nettogewicht"
 _NUTRITION_HEADING: Final = "Nährwerte je 100 g"
+#: Überschrift mit Spalte je Portion - "je 100 g" steht dann im Spaltenkopf.
+_NUTRITION_HEADING_COLUMNS: Final = "Nährwerte"
+_PER_100G: Final = "je 100 g"
 _INGREDIENTS_HEADING: Final = "Zutaten"
 
 
@@ -204,6 +210,10 @@ class LabelOptions:
     #: Bogens, die keinem der festen Formate entsprechen. Hat Vorrang vor
     #: ``size``.
     custom_mm: tuple[float, float] | None = None
+    #: Portion für eine zweite Spalte "je Scheibe (50 g)" samt der Zahl der
+    #: Portionen im Nettogewicht. Passt die Spalte nicht auf das Format, fehlt
+    #: sie, und :attr:`LabelReport.portion_fits` meldet das.
+    portion: Portion | None = None
 
     @property
     def millimeters(self) -> tuple[float, float]:
@@ -332,6 +342,8 @@ class LabelReport:
     #: Höhe, die der Inhalt samt vollständigem Verzeichnis braucht.
     required_height_px: int
     available_height_px: int
+    #: Die Spalte je Portion steht auf dem Etikett - oder es war keine verlangt.
+    portion_fits: bool = True
 
     def issues(self, *, for_sale: bool) -> list[SaleIssue]:
         """Was am Etikett nicht stimmt.
@@ -341,17 +353,26 @@ class LabelReport:
                 Geschenketikett darf kleinere Schrift und ein gekürztes
                 Verzeichnis haben - aber nichts darf unten abgeschnitten werden.
         """
-        if not for_sale:
-            if self.fixed_part_fits:
-                return []
-            return [
-                SaleIssue(
-                    "does_not_fit",
-                    "Der Inhalt passt nicht auf dieses Format - der untere Teil wird "
-                    "abgeschnitten. Größeres Format wählen oder Texte kürzen.",
-                )
-            ]
         issues: list[SaleIssue] = []
+        if not self.portion_fits:
+            issues.append(
+                SaleIssue(
+                    "portion_too_wide",
+                    "Die Spalte je Portion passt nicht neben die Werte je 100 g und fehlt "
+                    "deshalb - größeres Format wählen, eine kürzere Bezeichnung der "
+                    "Portion oder die Angabe je Portion abschalten.",
+                )
+            )
+        if not for_sale:
+            if not self.fixed_part_fits:
+                issues.append(
+                    SaleIssue(
+                        "does_not_fit",
+                        "Der Inhalt passt nicht auf dieses Format - der untere Teil wird "
+                        "abgeschnitten. Größeres Format wählen oder Texte kürzen.",
+                    )
+                )
+            return issues
         if not self.scalable_font:
             issues.append(
                 SaleIssue(
@@ -501,6 +522,16 @@ def _render(
         raise ValueError(f"Auflösung muss zwischen 36 und 1200 dpi liegen, war {options.dpi}")
     if options.net_weight_g < 0:
         raise ValueError(f"Nettogewicht darf nicht negativ sein, war {options.net_weight_g}")
+    portion = options.portion
+    if (
+        portion is not None
+        and options.net_weight_g > 0
+        and not portion.fits_into(options.net_weight_g)
+    ):
+        raise ValueError(
+            f"Die Portion ({portion.title}) ist schwerer als das Nettogewicht "
+            f"({options.net_weight_g:.0f} g)"
+        )
     if not all(MIN_LABEL_MM <= side <= MAX_LABEL_MM for side in options.millimeters):
         width_mm, height_mm = options.millimeters
         raise ValueError(
@@ -633,6 +664,9 @@ def _render(
             draw, nutrients, options, fonts=fonts, m=metrics, width=width, full_ingredients=True
         ),
         available_height_px=height,
+        portion_fits=not _table_layout(
+            draw, nutrients, options, fonts=fonts, m=metrics, width=right - left
+        ).portion_dropped,
     )
     return image, report
 
@@ -740,10 +774,12 @@ def _required_height(
 
     total += m.scaled(1.6) + m.scaled(3.4)  # Trennlinie mit Abstand
 
-    rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=inner_width)
-    header = _wrap(draw, _NUTRITION_HEADING, _font_section(fonts, m), inner_width)
+    table = _table_layout(draw, nutrients, options, fonts=fonts, m=m, width=inner_width)
+    header = _wrap(draw, table.heading, _font_section(fonts, m), inner_width)
     total += _heading_height(header, m, gap_mm=4.6)
-    total += sum(row.height(m) for row in rows) + m.scaled(3.0)
+    total += table.height(m) + _after_table_height(
+        _count_lines(draw, options, table, fonts=fonts, m=m, width=inner_width), m
+    )
 
     if options.net_weight_g > 0:
         total += _net_weight_layout(draw, options, fonts, m, inner_width).height(m)
@@ -926,21 +962,80 @@ class _TableRow:
     """
 
     label_lines: tuple[str, ...]
-    #: Der Wert; mehr als eine Zeile nur, wenn er allein breiter als das
+    #: Je Wertespalte die Zeilen des Werts. Mehr als eine, wenn der Brennwert
+    #: auf kJ und kcal verteilt ist oder ein Wert allein breiter als das
     #: Etikett ist.
-    value_lines: tuple[str, ...]
+    cells: tuple[tuple[str, ...], ...]
     indented: bool
     emphasised: bool
     value_below: bool
 
-    def height(self, m: _Metrics) -> int:
-        extra = len(self.label_lines) - 1
+    @property
+    def _value_lines(self) -> int:
+        return max(len(cell) for cell in self.cells)
+
+    @property
+    def lines(self) -> int:
+        """Zahl der Textzeilen der Tabellenzeile."""
         if self.value_below:
-            extra += len(self.value_lines)
-        return m.line(2.7, 4.2) + extra * m.line(2.7, 3.3)
+            return len(self.label_lines) + self._value_lines
+        return max(len(self.label_lines), self._value_lines)
+
+    @property
+    def value_offset(self) -> int:
+        """Zeile, in der die Werte beginnen.
+
+        Neben der Beschriftung stehen sie unten bündig - ein einzelner Wert
+        also auf der Grundlinie der letzten Zeile einer umbrochenen
+        Beschriftung.
+        """
+        if self.value_below:
+            return len(self.label_lines)
+        return self.lines - self._value_lines
+
+    def height(self, m: _Metrics) -> int:
+        return m.line(2.7, 4.2) + (self.lines - 1) * m.line(2.7, 3.3)
 
 
-def _table_rows(
+@dataclass(frozen=True, slots=True)
+class _Table:
+    """Die Nährwerttabelle: Zeilen und - mit Portion - zwei Wertespalten."""
+
+    rows: tuple[_TableRow, ...]
+    #: Je Wertespalte die Zeilen ihres Kopfs; leer ohne Spalte je Portion.
+    headers: tuple[tuple[str, ...], ...] = ()
+    #: Breite je Wertespalte; leer, wenn jeder Wert für sich rechtsbündig steht.
+    widths: tuple[int, ...] = ()
+    gap: int = 0
+    #: Eine Spalte je Portion war verlangt, passte aber nicht auf das Format.
+    portion_dropped: bool = False
+
+    @property
+    def heading(self) -> str:
+        return _NUTRITION_HEADING_COLUMNS if self.headers else _NUTRITION_HEADING
+
+    def edges(self, right: int) -> tuple[int, ...]:
+        """Rechte Kante jeder Wertespalte."""
+        if not self.widths:
+            return (right,)
+        edges: list[int] = []
+        x = right
+        for width in reversed(self.widths):
+            edges.append(x)
+            x -= width + self.gap
+        return tuple(reversed(edges))
+
+    def header_height(self, m: _Metrics) -> int:
+        if not self.headers:
+            return 0
+        return max(len(lines) for lines in self.headers) * m.line(2.1, 3.0)
+
+    def height(self, m: _Metrics) -> int:
+        """Spaltenköpfe und Zeilen, ohne den Abstand darunter."""
+        return self.header_height(m) + sum(row.height(m) for row in self.rows)
+
+
+def _table_layout(
     draw: ImageDraw.ImageDraw,
     nutrients: Nutrients,
     options: LabelOptions,
@@ -948,12 +1043,45 @@ def _table_rows(
     fonts: FontSet,
     m: _Metrics,
     width: int,
-) -> list[_TableRow]:
-    """Die Zeilen der Nährwerttabelle samt Umbruch."""
-    rows: list[_TableRow] = []
-    for label, value, indented, emphasised in _nutrition_rows(
-        nutrients, show_fiber=options.show_fiber
-    ):
+) -> _Table:
+    """Die Nährwerttabelle samt Umbruch.
+
+    Mit Portion wird zuerst versucht, beide Spalten neben die Beschriftungen
+    zu stellen. Rückt dabei eine Zeile unter ihre Beschriftung, steht der
+    Brennwert zweizeilig ("951 kJ" über "227 kcal") - das macht die Spalten
+    schmal. Passen die beiden Spalten nicht einmal nebeneinander in die
+    Breite, fehlt die Spalte je Portion.
+    """
+    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
+    portion = options.portion
+    if portion is None:
+        return _one_column(draw, rows, fonts=fonts, m=m, width=width)
+    per_portion = _nutrition_rows(portion.nutrients(nutrients), show_fiber=options.show_fiber)
+    wide = _two_columns(
+        draw, rows, per_portion, portion, fonts=fonts, m=m, width=width, split_energy=False
+    )
+    if wide is not None and not any(row.value_below for row in wide.rows):
+        return wide
+    narrow = _two_columns(
+        draw, rows, per_portion, portion, fonts=fonts, m=m, width=width, split_energy=True
+    )
+    if narrow is not None:
+        return narrow
+    single = _one_column(draw, rows, fonts=fonts, m=m, width=width)
+    return _Table(single.rows, portion_dropped=True)
+
+
+def _one_column(
+    draw: ImageDraw.ImageDraw,
+    rows: list[tuple[str, str, bool, bool]],
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> _Table:
+    """Tabelle mit den Werten je 100 g, jeder für sich rechtsbündig."""
+    result: list[_TableRow] = []
+    for label, value, indented, emphasised in rows:
         font = _font_body(fonts, m, bold=emphasised)
         indent = m.scaled(3.0) if indented else 0
         room = width - indent - m.scaled(2.0) - draw.textlength(value, font=font)
@@ -965,8 +1093,84 @@ def _table_rows(
         else:
             lines, below = _wrap(draw, label, font, width - indent), True
             values = _wrap(draw, value, font, width - indent)
-        rows.append(_TableRow(tuple(lines), tuple(values), indented, emphasised, below))
-    return rows
+        result.append(_TableRow(tuple(lines), (tuple(values),), indented, emphasised, below))
+    return _Table(tuple(result))
+
+
+def _two_columns(
+    draw: ImageDraw.ImageDraw,
+    rows: list[tuple[str, str, bool, bool]],
+    per_portion: list[tuple[str, str, bool, bool]],
+    portion: Portion,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+    split_energy: bool,
+) -> _Table | None:
+    """Tabelle mit Spalten je 100 g und je Portion; ``None``, wenn sie nicht passen."""
+    headers = ((_PER_100G,), (f"je {portion.name}", f"({portion.weight_text})"))
+    header_font = _font_small(fonts, m)
+    cells: list[tuple[tuple[str, ...], ...]] = []
+    widths = [max(draw.textlength(line, font=header_font) for line in lines) for lines in headers]
+    for (_, value, _, emphasised), (_, portion_value, _, _) in zip(rows, per_portion, strict=True):
+        font = _font_body(fonts, m, bold=emphasised)
+        row = tuple(_cell(text, split=split_energy) for text in (value, portion_value))
+        for column, cell in enumerate(row):
+            widths[column] = max(
+                widths[column], *(draw.textlength(line, font=font) for line in cell)
+            )
+        cells.append(row)
+    gap = m.scaled(2.0)
+    column_widths = tuple(math.ceil(value) for value in widths)
+    values_width = sum(column_widths) + gap
+    if values_width > width:
+        return None
+
+    result: list[_TableRow] = []
+    for (label, _, indented, emphasised), row in zip(rows, cells, strict=True):
+        font = _font_body(fonts, m, bold=emphasised)
+        indent = m.scaled(3.0) if indented else 0
+        room = width - indent - m.scaled(2.0) - values_width
+        if draw.textlength(label, font=font) <= room:
+            lines, below = [label], False
+        elif all(draw.textlength(word, font=font) <= room for word in label.split(" ")):
+            lines, below = _wrap(draw, label, font, int(room)), False
+        else:
+            lines, below = _wrap(draw, label, font, width - indent), True
+        result.append(_TableRow(tuple(lines), row, indented, emphasised, below))
+    return _Table(tuple(result), headers, column_widths, gap)
+
+
+def _cell(value: str, *, split: bool) -> tuple[str, ...]:
+    """Ein Wert als Zellzeilen - der Brennwert auf Wunsch als kJ über kcal."""
+    if split and " / " in value:
+        return tuple(value.split(" / "))
+    return (value,)
+
+
+def _count_lines(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    table: _Table,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> list[str]:
+    """Zahl der Portionen unter der Tabelle - nur mit Spalte je Portion und Nettogewicht."""
+    portion = options.portion
+    if portion is None or not table.headers or options.net_weight_g <= 0:
+        return []
+    text = f"Ergibt {portion.count_text(options.net_weight_g)}"
+    return _wrap(draw, text, _font_small(fonts, m), width)
+
+
+def _after_table_height(count: Sequence[str], m: _Metrics) -> int:
+    """Abstand unter der Tabelle, samt der Zeilen mit der Zahl der Portionen."""
+    if not count:
+        return m.scaled(3.0)
+    return m.scaled(2.2) + len(count) * m.line(2.1, 3.0) + m.scaled(1.6)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1128,47 +1332,67 @@ def _draw_nutrition(
     right: int,
     top: int,
 ) -> int:
-    """Überschrift und Nährwerttabelle."""
+    """Überschrift, Nährwerttabelle und die Zahl der Portionen."""
+    width = right - left
+    table = _table_layout(draw, nutrients, options, fonts=fonts, m=m, width=width)
     y = _draw_heading(
         draw,
-        _NUTRITION_HEADING,
+        table.heading,
         colour=palette.accent,
         fonts=fonts,
         m=m,
         left=left,
-        width=right - left,
+        width=width,
         top=top,
         gap_mm=4.6,
     )
 
-    rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=right - left)
     panel_top = y - m.scaled(1.2)
     draw.rectangle(
         [
             left - m.mm(1.5),
             panel_top,
             right + m.mm(1.5),
-            panel_top + sum(row.height(m) for row in rows) + m.scaled(2.4),
+            panel_top + table.height(m) + m.scaled(2.4),
         ],
         fill=palette.panel,
     )
 
-    for row in rows:
+    edges = table.edges(right)
+    small = _font_small(fonts, m)
+    for edge, lines in zip(edges, table.headers, strict=False):
+        for index, text in enumerate(lines):
+            line_y = y + index * m.line(2.1, 3.0)
+            draw.text((edge, line_y), text, fill=palette.muted, font=small, anchor="ra")
+    y += table.header_height(m)
+
+    line_height = m.line(2.7, 3.3)
+    for row in table.rows:
         font = _font_body(fonts, m, bold=row.emphasised)
         colour = palette.muted if row.indented else palette.text
         x = left + (m.scaled(3.0) if row.indented else 0)
-        line_y = y
         for index, text in enumerate(row.label_lines):
-            if index:
-                line_y += m.line(2.7, 3.3)
-            draw.text((x, line_y), text, fill=colour, font=font)
-        for text in row.value_lines:
-            if row.value_below:
-                line_y += m.line(2.7, 3.3)
-            draw.text((right, line_y), text, fill=colour, font=font, anchor="ra")
+            draw.text((x, y + index * line_height), text, fill=colour, font=font)
+        values_top = y + row.value_offset * line_height
+        for edge, cell in zip(edges, row.cells, strict=True):
+            for index, text in enumerate(cell):
+                draw.text(
+                    (edge, values_top + index * line_height),
+                    text,
+                    fill=colour,
+                    font=font,
+                    anchor="ra",
+                )
         y += row.height(m)
 
-    return y + m.scaled(3.0)
+    count = _count_lines(draw, options, table, fonts=fonts, m=m, width=width)
+    if count:
+        # Pflicht, sobald Werte je Portion dastehen (Artikel 33 Abs. 1).
+        line_y = y + m.scaled(2.2)
+        for line in count:
+            draw.text((left, line_y), line, fill=palette.text, font=small)
+            line_y += m.line(2.1, 3.0)
+    return y + _after_table_height(count, m)
 
 
 def _draw_net_weight(

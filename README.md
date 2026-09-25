@@ -32,7 +32,9 @@ Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
 bleibt erhalten. Das Zutatenverzeichnis folgt Artikel 18: absteigend nach
 Gewicht, zugefügtes Wasser nach seinem Anteil im fertigen Brot, gleichnamige
 Zutaten zusammengefasst, Allergene fett. Ohne Verzeichnis steht „Enthält: …“
-mit den Allergenen auf dem Etikett.
+mit den Allergenen auf dem Etikett. Hat das Rezept eine Portion, zeigt die
+Nährwerttabelle zusätzlich die Werte je Portion samt der Zahl der Portionen
+(Artikel 33).
 
 **Verkaufen.** Mit „Etikett für den Verkauf“ prüft der Etikettdialog laufend
 die Pflichtangaben für verpackt verkauftes Brot (Artikel 9 VO (EU)

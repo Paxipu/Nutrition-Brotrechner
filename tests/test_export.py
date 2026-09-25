@@ -18,6 +18,8 @@ from PIL import Image, ImageDraw
 from brotrechner.core.analysis import ResolvedItem, analyze
 from brotrechner.core.models import Ingredient
 from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.portions import MAX_NAME_LENGTH, Portion
+from brotrechner.core.rounding import declare_energy, declare_nutrient
 from brotrechner.export import report
 from brotrechner.export.fonts import load_font_set
 from brotrechner.export.label import (
@@ -25,6 +27,7 @@ from brotrechner.export.label import (
     LabelSize,
     LabelTheme,
     date_lines,
+    measure_label,
     render_label,
 )
 from brotrechner.export.table import (
@@ -405,6 +408,14 @@ class TestNothingOverlaps:
             "baked_on": date(2026, 8, 16),
             "best_before": date(2026, 8, 23),
         },
+        "Portion": {"portion": Portion("Scheibe", 50.0), "ingredients": LONG_INGREDIENTS},
+        "Portion im Verkauf": {
+            "portion": Portion("Brötchen", 75.0),
+            "for_sale": True,
+            "producer": "Backstube Muster\nHauptstraße 1\n12345 Musterstadt",
+            "ingredients": LONG_INGREDIENTS,
+            "best_before": date(2026, 8, 23),
+        },
     }
 
     @pytest.mark.parametrize("dpi", [110, 300])
@@ -469,6 +480,129 @@ class TestNothingOverlaps:
             ingredients=LONG_INGREDIENTS,
             for_sale=for_sale,
             producer=producer,
+        )
+        assert _layout_problems(options) == []
+
+
+class TestPortionColumn:
+    """Nährwerte je Portion als zweite Spalte der Tabelle.
+
+    Artikel 33 VO (EU) Nr. 1169/2011: zusätzlich zu den Werten je 100 g, mit
+    der Portion in unmittelbarer Nähe der Tabelle und der Zahl der Portionen.
+    """
+
+    PORTION: ClassVar[Portion] = Portion("Scheibe", 50.0)
+
+    def _texts(self, **values: Any) -> list[str]:
+        settings: dict[str, Any] = {
+            "size": LabelSize.LARGE,
+            "dpi": 150,
+            "net_weight_g": 1500,
+            "portion": self.PORTION,
+        }
+        settings.update(values)
+        return [drawn.text for drawn in _drawn_texts(LabelOptions(**settings))]
+
+    def test_both_columns_are_labelled(self) -> None:
+        texts = self._texts()
+        assert "Nährwerte" in texts
+        assert "Nährwerte je 100 g" not in texts, "je 100 g steht jetzt im Spaltenkopf"
+        for header in ("je 100 g", "je Scheibe", "(50 g)"):
+            assert header in texts
+
+    def test_the_values_per_portion_are_declared(self) -> None:
+        per_portion = self.PORTION.nutrients(BREAD)
+        texts = self._texts()
+        assert declare_nutrient("salt", per_portion.salt).text in texts
+        assert declare_nutrient("carbs", per_portion.carbs).text in texts
+        energy = declare_energy(per_portion.energy_kcal)
+        assert energy in texts or all(part in texts for part in energy.split(" / "))
+
+    def test_the_number_of_portions(self) -> None:
+        assert "Ergibt 30 Scheiben" in self._texts()
+
+    def test_an_approximate_number(self) -> None:
+        assert "Ergibt ca. 33 Scheiben" in self._texts(portion=Portion("Scheibe", 46.0))
+
+    def test_without_a_net_weight_there_is_no_number(self) -> None:
+        texts = self._texts(net_weight_g=0)
+        assert "je Scheibe" in texts
+        assert not [text for text in texts if text.startswith("Ergibt")]
+
+    def test_without_a_portion_nothing_changes(self) -> None:
+        texts = self._texts(portion=None)
+        assert "Nährwerte je 100 g" in texts
+        assert "je 100 g" not in texts
+
+    @pytest.mark.parametrize("size", list(LabelSize))
+    def test_both_values_share_a_baseline(self, size: LabelSize) -> None:
+        texts = _drawn_texts(LabelOptions(size=size, dpi=300, portion=self.PORTION))
+        per_portion = self.PORTION.nutrients(BREAD)
+        pairs = [
+            (
+                declare_nutrient(name, getattr(BREAD, name)).text,
+                declare_nutrient(name, getattr(per_portion, name)).text,
+            )
+            for name in ("fat", "protein", "salt")
+        ]
+        for per_100g, per_slice in pairs:
+            first = next(d for d in texts if d.text == per_100g)
+            second = next(d for d in texts if d.text == per_slice and d is not first)
+            assert first.baseline == second.baseline, per_100g
+            assert first.advance[1] < second.advance[0], "je 100 g steht links"
+
+    def test_a_portion_heavier_than_the_bread_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Portion"):
+            render_label(
+                BREAD, LabelOptions(net_weight_g=40, portion=self.PORTION, dpi=72), fonts=FONTS
+            )
+
+    def test_a_column_that_does_not_fit_is_left_out_and_reported(self) -> None:
+        options = LabelOptions(
+            custom_mm=(30.0, 150.0),
+            dpi=150,
+            net_weight_g=900,
+            portion=Portion("Kastenweißbrotscheibe", 45.5),
+        )
+        texts = [drawn.text for drawn in _drawn_texts(options)]
+        # Auf 30 mm bricht sogar die Überschrift um - geprüft werden die Spaltenköpfe.
+        assert "je 100 g" not in texts
+        assert not [text for text in texts if text.startswith(("je Kasten", "(45,5 g)"))]
+        found = measure_label(BREAD, options, fonts=FONTS)
+        assert not found.portion_fits
+        for for_sale in (False, True):
+            codes = [issue.code for issue in found.issues(for_sale=for_sale)]
+            assert "portion_too_wide" in codes
+
+    def test_a_column_that_fits_is_not_reported(self) -> None:
+        options = LabelOptions(
+            size=LabelSize.LARGE, dpi=150, net_weight_g=1500, portion=self.PORTION
+        )
+        found = measure_label(BREAD, options, fonts=FONTS)
+        assert found.portion_fits
+        assert "portion_too_wide" not in [issue.code for issue in found.issues(for_sale=False)]
+
+    @given(
+        name=st.text(
+            alphabet=st.characters(min_codepoint=0x21, max_codepoint=0xFF, categories=("L",)),
+            min_size=1,
+            max_size=MAX_NAME_LENGTH,
+        ),
+        weight=st.floats(min_value=0.1, max_value=900.0),
+        size=st.sampled_from(list(LabelSize)),
+        for_sale=st.booleans(),
+    )
+    def test_any_portion_keeps_the_layout(
+        self, *, name: str, weight: float, size: LabelSize, for_sale: bool
+    ) -> None:
+        options = LabelOptions(
+            title="Roggenmischbrot",
+            size=size,
+            dpi=110,
+            net_weight_g=900,
+            ingredients=LONG_INGREDIENTS,
+            for_sale=for_sale,
+            portion=Portion(name, weight),
         )
         assert _layout_problems(options) == []
 
