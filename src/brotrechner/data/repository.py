@@ -5,7 +5,10 @@ Verzeichnis geschrieben und diese anschließend über ``os.replace`` an ihren
 Platz gezogen. Ein Absturz mitten im Speichern kann so keine halbe JSON-Datei
 hinterlassen - im schlimmsten Fall bleibt der vorherige Stand erhalten.
 
-Vor jedem Überschreiben wird zusätzlich eine rotierende Sicherung angelegt.
+Vor jedem Überschreiben wird zusätzlich eine rotierende Sicherung angelegt -
+aber nur, wenn sich der Inhalt wirklich ändert. Früher legte jedes Speichern
+eine an, auch das beim Beenden: Nach zehnmal Schließen ohne Änderung waren die
+zehn Sicherungen zehn gleiche Kopien, und jeder ältere Stand war verloren.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ __all__ = [
     "RecipeStore",
     "load_ingredients",
     "load_recipes",
+    "make_backup",
     "read_json",
     "save_ingredients",
     "save_recipes",
@@ -46,6 +50,10 @@ SCHEMA_VERSION: Final = 2
 
 #: Anzahl aufbewahrter Sicherungen je Datei.
 MAX_BACKUPS: Final = 10
+
+#: Schlüssel, die sich bei jedem Speichern ändern und deshalb nicht als
+#: Änderung des Inhalts zählen.
+_VOLATILE_KEYS: Final = ("updated_at",)
 
 #: Zutatenfelder, die erst nach Version 5.1 hinzugekommen sind. Fehlen sie in
 #: einem Eintrag, hat ihn ein älteres Programm geschrieben; die Datenschicht
@@ -234,17 +242,29 @@ def read_json(path: Path) -> Any:
         ) from exc
 
 
-def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:
+def write_json_atomic(
+    path: Path, payload: Any, *, backup: bool = True, volatile: Iterable[str] = ()
+) -> bool:
     """Schreibt JSON atomar und legt vorher eine Sicherung an.
+
+    Steht derselbe Inhalt schon in der Datei, wird weder geschrieben noch
+    gesichert.
 
     Args:
         path: Zieldatei.
         payload: JSON-serialisierbares Objekt.
         backup: Vorherigen Stand sichern, falls die Datei existiert.
+        volatile: Schlüssel der obersten Ebene, die beim Vergleich nicht
+            zählen - etwa ein Zeitstempel, der sich bei jedem Speichern ändert.
+
+    Returns:
+        ``True``, wenn geschrieben wurde; ``False``, wenn der Inhalt gleich war.
 
     Raises:
         RepositoryError: Wenn das Schreiben fehlschlägt.
     """
+    if _unchanged(path, payload, frozenset(volatile)):
+        return False
     tmp_path: Path | None = None
     try:
         # Auch das Anlegen des Verzeichnisses gehört in die Fehlerbehandlung:
@@ -271,27 +291,99 @@ def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:
     finally:
         if tmp_path is not None and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
+    return True
 
 
-def _rotate_backup(path: Path) -> None:
+def _unchanged(path: Path, payload: Any, volatile: frozenset[str]) -> bool:
+    """Steht der Inhalt schon so in der Datei?
+
+    Verglichen wird nach einem Umweg über JSON: Aus einem Tupel wird dabei eine
+    Liste, genau wie beim Schreiben. Eine unlesbare Datei gilt als geändert -
+    sie wird dann gesichert und ersetzt.
+    """
+    if not path.exists():
+        return False
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+        wanted = json.loads(json.dumps(payload, ensure_ascii=False))
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    return bool(_without(current, volatile) == _without(wanted, volatile))
+
+
+def _without(data: Any, keys: frozenset[str]) -> Any:
+    """Ein JSON-Objekt ohne die genannten Schlüssel der obersten Ebene."""
+    if isinstance(data, dict):
+        return {key: value for key, value in data.items() if key not in keys}
+    return data
+
+
+def make_backup(path: Path) -> Path | None:
+    """Sichert den jetzigen Stand einer Datei, etwa auf ausdrücklichen Wunsch.
+
+    Returns:
+        Die Sicherung - auch eine schon vorhandene mit gleichem Inhalt - oder
+        ``None``, wenn die Datei fehlt oder das Sichern scheiterte.
+    """
+    if not path.exists():
+        return None
+    return _rotate_backup(path)
+
+
+def _rotate_backup(path: Path) -> Path | None:
     """Legt eine Sicherung an und hält nur die jüngsten :data:`MAX_BACKUPS`.
 
     Die Sicherungen liegen in ``backups`` **neben** der gesicherten Datei, nicht
     in einem festen Verzeichnis. Damit stimmt der Ablageort auch dann, wenn das
     Programm mit ``--data-dir`` auf ein anderes Verzeichnis gerichtet wurde.
+
+    Gleicht die Datei der jüngsten Sicherung, entsteht keine zweite Kopie -
+    sie würde nur einen älteren Stand aus der Rotation drängen.
+
+    Returns:
+        Die Sicherung oder ``None``, wenn sie scheiterte.
     """
     try:
         target_dir = path.parent / "backups"
         target_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        shutil.copy2(path, target_dir / f"{path.stem}_{stamp}{path.suffix}")
-
-        existing = sorted(target_dir.glob(f"{path.stem}_*{path.suffix}"))
-        for stale in existing[:-MAX_BACKUPS]:
+        existing = _backups_of(path, target_dir)
+        if existing and existing[-1].read_bytes() == path.read_bytes():
+            return existing[-1]
+        target = _free_backup_name(path, target_dir)
+        shutil.copy2(path, target)
+        for stale in _backups_of(path, target_dir)[:-MAX_BACKUPS]:
             stale.unlink(missing_ok=True)
     except OSError as exc:
         # Eine fehlgeschlagene Sicherung darf das Speichern nicht verhindern.
         log.warning("Sicherung von %s fehlgeschlagen: %s", path, exc)
+        return None
+    return target
+
+
+def _backups_of(path: Path, target_dir: Path) -> list[Path]:
+    """Sicherungen einer Datei, die älteste zuerst.
+
+    Die Namen tragen einen Zeitstempel fester Breite; ihre alphabetische
+    Reihenfolge ist deshalb die zeitliche - auch gegenüber älteren Namen ohne
+    Mikrosekunden.
+    """
+    return sorted(target_dir.glob(f"{path.stem}_*{path.suffix}"))
+
+
+def _free_backup_name(path: Path, target_dir: Path) -> Path:
+    """Ein freier Name für die nächste Sicherung.
+
+    Bisher trug der Name nur Sekunden: Zwei Speichervorgänge in derselben
+    Sekunde schrieben dieselbe Sicherung, und der ältere Stand ging verloren.
+    Jetzt mit Mikrosekunden und, sollte selbst das gleich sein, mit Zähler.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = target_dir / f"{path.stem}_{stamp}{path.suffix}"
+    counter = 1
+    while candidate.exists():
+        candidate = target_dir / f"{path.stem}_{stamp}_{counter:03d}{path.suffix}"
+        counter += 1
+    return candidate
 
 
 # ── Zutaten ────────────────────────────────────────────────────────────────
@@ -353,15 +445,19 @@ def load_ingredients(path: Path) -> tuple[IngredientStore, LoadResult]:
     return IngredientStore(ingredients), result
 
 
-def save_ingredients(path: Path, store: IngredientStore) -> None:
-    """Speichert die Zutatendatenbank atomar."""
+def save_ingredients(path: Path, store: IngredientStore) -> bool:
+    """Speichert die Zutatendatenbank atomar - nur wenn sich etwas geändert hat.
+
+    Returns:
+        ``True``, wenn geschrieben wurde.
+    """
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generator": f"brotrechner {__version__}",
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "ingredients": [i.to_dict() for i in store.sorted()],
     }
-    write_json_atomic(path, payload)
+    return write_json_atomic(path, payload, volatile=_VOLATILE_KEYS)
 
 
 # ── Rezepte ────────────────────────────────────────────────────────────────
@@ -419,12 +515,16 @@ def load_recipes(path: Path, ingredients: IngredientStore) -> tuple[RecipeStore,
     return RecipeStore(recipes), result
 
 
-def save_recipes(path: Path, store: RecipeStore) -> None:
-    """Speichert die Rezeptdatenbank atomar."""
+def save_recipes(path: Path, store: RecipeStore) -> bool:
+    """Speichert die Rezeptdatenbank atomar - nur wenn sich etwas geändert hat.
+
+    Returns:
+        ``True``, wenn geschrieben wurde.
+    """
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generator": f"brotrechner {__version__}",
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "recipes": [r.to_dict() for r in store.sorted_by_date()],
     }
-    write_json_atomic(path, payload)
+    return write_json_atomic(path, payload, volatile=_VOLATILE_KEYS)

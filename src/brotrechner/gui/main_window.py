@@ -40,6 +40,7 @@ from brotrechner.data.repository import (
     RecipeStore,
     RepositoryError,
     load_recipes,
+    make_backup,
     save_ingredients,
     save_recipes,
 )
@@ -842,14 +843,28 @@ class MainWindow(QMainWindow):
     # ── Sonstiges ─────────────────────────────────────────────────────────
 
     def _on_backup(self) -> None:
-        ok = self._save_ingredients() and self._save_recipes()
-        if ok:
-            QMessageBox.information(
+        """Speichert und sichert den jetzigen Stand beider Dateien.
+
+        Bisher sicherte der Menüpunkt nur den *vorherigen* Stand - und nur,
+        wenn beim Speichern tatsächlich geschrieben wurde.
+        """
+        if not (self._save_ingredients() and self._save_recipes()):
+            return
+        made = [make_backup(path) for path in (self._ingredients_path, self._recipes_path)]
+        folder = paths.backup_dir(self._data_dir)
+        if any(backup is None for backup in made):
+            QMessageBox.warning(
                 self,
-                "Sicherung angelegt",
-                f"Zutaten und Rezepte wurden gespeichert. Die vorherigen Stände liegen in\n\n"
-                f"{paths.backup_dir(self._data_dir)}",
+                "Sicherung unvollständig",
+                f"Nicht jede Datei ließ sich sichern. Bitte prüfen, ob in\n\n{folder}\n\n"
+                "geschrieben werden darf.",
             )
+            return
+        QMessageBox.information(
+            self,
+            "Sicherung angelegt",
+            f"Der jetzige Stand von Zutaten und Rezepten liegt in\n\n{folder}",
+        )
 
     def _on_open_data_dir(self) -> None:
         from PySide6.QtCore import QUrl  # noqa: PLC0415 - nur hier gebraucht

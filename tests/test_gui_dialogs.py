@@ -271,6 +271,27 @@ class TestPersistence:
         window._save_recipes()  # type: ignore[attr-defined]
         window._refresh_all()  # type: ignore[attr-defined]
 
+    def test_the_backup_action_secures_the_current_state(
+        self, window: object, data_dir, dialogs: dict[str, object]
+    ) -> None:
+        """Bisher sicherte "Sicherung anlegen" nur den vorherigen Stand."""
+        del dialogs
+        window._on_backup()  # type: ignore[attr-defined]
+        for name in ("ingredients", "recipes"):
+            newest = sorted((data_dir / "backups").glob(f"{name}_*.json"))[-1]
+            assert newest.read_bytes() == (data_dir / f"{name}.json").read_bytes()
+
+    def test_closing_without_changes_leaves_no_backups(
+        self, qapp: object, data_dir, dialogs: dict[str, object]
+    ) -> None:
+        """Jedes Beenden speicherte - und verdrängte so die echten Sicherungen."""
+        del qapp, dialogs
+        from brotrechner.gui.main_window import MainWindow
+
+        for _ in range(3):
+            MainWindow(data_dir=data_dir).close()
+        assert list((data_dir / "backups").glob("*.json")) == []
+
     def test_notes_added_later_are_written_to_disk(
         self, window: object, data_dir, dialogs: dict[str, object]
     ) -> None:

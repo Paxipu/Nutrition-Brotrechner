@@ -52,6 +52,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   höher - und mehrzeilige Texte in gleichmäßigem Zeilenabstand. Ein Test
   zeichnet jede Textausgabe auf und prüft Rand und Überdeckung für alle
   Formate, ein Eigenschaftstest mit beliebig langen Texten.
+- **Sicherungen verdrängten sich gegenseitig.** Jedes Speichern legte eine
+  Sicherung an, auch das automatische beim Beenden. Nach zehnmal Schließen
+  ohne Änderung waren die zehn aufbewahrten Sicherungen zehn gleiche Kopien,
+  und jeder ältere Stand war verloren. Außerdem trugen die Namen nur Sekunden:
+  Zwei Speichervorgänge in derselben Sekunde schrieben dieselbe Sicherung.
+  Jetzt wird nur geschrieben und gesichert, wenn sich der Inhalt ändert - ein
+  neuer Zeitstempel allein zählt nicht -, die Namen sind eindeutig, und keine
+  Sicherung verdoppelt die jüngste. „Sicherung anlegen“ sichert nun den
+  jetzigen Stand, nicht nur den vorherigen.
 - **Das Etikett wurde auf die ganze Druckseite gestreckt.** Ein Etikett von
   70 × 100 mm kam auf A4 rund 200 mm breit aus dem Drucker. Außerdem zählte
   der Druckerrand doppelt, das Etikett saß um den Rand versetzt. Gedruckt wird
