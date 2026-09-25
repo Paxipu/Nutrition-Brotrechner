@@ -473,6 +473,60 @@ class TestNothingOverlaps:
         assert _layout_problems(options) == []
 
 
+class TestCustomFormat:
+    """Ein eigenes Format, etwa für die Etiketten eines Bogens."""
+
+    def test_the_custom_size_wins(self) -> None:
+        options = LabelOptions(size=LabelSize.SMALL, custom_mm=(105.0, 74.0), dpi=254)
+        assert options.millimeters == (105.0, 74.0)
+        assert options.pixel_size() == (1050, 740)
+
+    def test_without_it_the_preset_counts(self) -> None:
+        assert LabelOptions(size=LabelSize.LARGE).millimeters == (90.0, 130.0)
+
+    def test_a_landscape_label_renders(self) -> None:
+        options = LabelOptions(custom_mm=(105.0, 74.0), dpi=150, net_weight_g=750)
+        assert render_label(BREAD, options, fonts=FONTS).size == options.pixel_size()
+
+    @pytest.mark.parametrize(
+        "custom_mm",
+        [(0.0, 50.0), (29.9, 50.0), (50.0, 297.1), (-70.0, 100.0), (float("nan"), 50.0)],
+    )
+    def test_sizes_outside_the_limits_are_rejected(self, custom_mm: tuple[float, float]) -> None:
+        with pytest.raises(ValueError, match="Etikettformat"):
+            render_label(BREAD, LabelOptions(custom_mm=custom_mm, dpi=72), fonts=FONTS)
+
+    def test_the_limits_themselves_are_allowed(self) -> None:
+        from brotrechner.export.label import MAX_LABEL_MM, MIN_LABEL_MM
+
+        options = LabelOptions(custom_mm=(MIN_LABEL_MM, MAX_LABEL_MM), dpi=72)
+        assert render_label(BREAD, options, fonts=FONTS).size == options.pixel_size()
+
+    def test_too_many_pixels_are_rejected(self) -> None:
+        """A4 in 1200 dpi wären 139 Millionen Pixel - über 400 MB Speicher."""
+        with pytest.raises(ValueError, match="zu groß"):
+            render_label(BREAD, LabelOptions(custom_mm=(210.0, 297.0), dpi=1200), fonts=FONTS)
+
+    @given(
+        width=st.floats(min_value=30.0, max_value=297.0),
+        height=st.floats(min_value=30.0, max_value=297.0),
+        for_sale=st.booleans(),
+    )
+    def test_any_format_keeps_every_text_inside(
+        self, width: float, height: float, *, for_sale: bool
+    ) -> None:
+        options = LabelOptions(
+            title="Roggenmischbrot",
+            custom_mm=(width, height),
+            dpi=72,
+            net_weight_g=900,
+            ingredients=LONG_INGREDIENTS,
+            for_sale=for_sale,
+            producer="Backstube Muster\nHauptstraße 1\n12345 Musterstadt",
+        )
+        assert _layout_problems(options) == []
+
+
 class TestDateLines:
     def test_both_dates_get_their_own_line(self) -> None:
         """Zusammen in einer Zeile liefen sie über beide Ränder hinaus."""

@@ -146,3 +146,35 @@ class TestPrintingTheLabel:
     ) -> None:
         _, _, target = self._print(dialog, tmp_path, monkeypatch)
         assert target.read_bytes().startswith(b"%PDF")
+
+    def test_the_custom_format_shows_its_fields(self, dialog: object) -> None:
+        combo = dialog.cmb_size  # type: ignore[attr-defined]
+        spin = dialog.spin_width  # type: ignore[attr-defined]
+        assert not spin.isVisibleTo(dialog)
+        combo.setCurrentIndex(combo.findData(None))
+        assert spin.isVisibleTo(dialog)
+        combo.setCurrentIndex(0)
+        assert not spin.isVisibleTo(dialog)
+
+    def test_the_custom_format_reaches_the_label(self, dialog: object) -> None:
+        combo = dialog.cmb_size  # type: ignore[attr-defined]
+        combo.setCurrentIndex(combo.findData(None))
+        dialog.spin_width.setValue(105.0)  # type: ignore[attr-defined]
+        dialog.spin_height.setValue(74.0)  # type: ignore[attr-defined]
+        assert dialog._options(dpi=110).millimeters == (105.0, 74.0)  # type: ignore[attr-defined]
+        assert "105 × 74 mm" in dialog.lbl_dimensions.text()  # type: ignore[attr-defined]
+
+    def test_a_preset_ignores_the_fields(self, dialog: object) -> None:
+        dialog.spin_width.setValue(105.0)  # type: ignore[attr-defined]
+        assert dialog._options(dpi=110).custom_mm is None  # type: ignore[attr-defined]
+
+    def test_a_custom_format_is_printed_at_its_size(
+        self, dialog: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        combo = dialog.cmb_size  # type: ignore[attr-defined]
+        combo.setCurrentIndex(combo.findData(None))
+        dialog.spin_width.setValue(105.0)  # type: ignore[attr-defined]
+        dialog.spin_height.setValue(74.0)  # type: ignore[attr-defined]
+        (_, _, width, height), dpi, _ = self._print(dialog, tmp_path, monkeypatch)
+        assert width / dpi * MM_PER_INCH == pytest.approx(105.0, abs=0.1)
+        assert height / dpi * MM_PER_INCH == pytest.approx(74.0, abs=0.1)

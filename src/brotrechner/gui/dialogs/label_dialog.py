@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -51,6 +52,8 @@ from brotrechner.core.sales import SaleIssue, check_sale
 from brotrechner.core.validation import Severity
 from brotrechner.export.fonts import load_font_set
 from brotrechner.export.label import (
+    MAX_LABEL_MM,
+    MIN_LABEL_MM,
     LabelOptions,
     LabelReport,
     LabelSize,
@@ -86,6 +89,18 @@ _DEFAULT_SHELF_LIFE_DAYS = 7
 def _to_date(value: QDate) -> date:
     """Wandelt ein ``QDate`` in ein Python-Datum."""
     return date(value.year(), value.month(), value.day())
+
+
+def _millimeter_spin(value: float, tooltip: str) -> QDoubleSpinBox:
+    """Eingabe einer Etikettseite in Millimetern."""
+    spin = QDoubleSpinBox()
+    spin.setRange(MIN_LABEL_MM, MAX_LABEL_MM)
+    spin.setDecimals(1)
+    spin.setSingleStep(1.0)
+    spin.setSuffix(" mm")
+    spin.setValue(value)
+    spin.setToolTip(tooltip)
+    return spin
 
 
 def pil_to_qimage(image: Image.Image) -> QImage:
@@ -200,7 +215,21 @@ class LabelDialog(QDialog):
         self.cmb_size = QComboBox()
         for size in LabelSize:
             self.cmb_size.addItem(size.label, size)
+        # Ohne Datenwert: Die Maße stehen dann in den beiden Feldern darunter.
+        self.cmb_size.addItem("Eigenes Format …", None)
         self.cmb_size.setCurrentIndex(list(LabelSize).index(LabelSize.MEDIUM))
+        self.cmb_size.setToolTip(
+            "Für Etikettenbögen: Das eigene Format auf die Maße eines Etiketts\n"
+            "auf dem Bogen stellen - sie stehen auf der Verpackung."
+        )
+        self.spin_width = _millimeter_spin(70.0, "Breite des Etiketts")
+        self.spin_height = _millimeter_spin(100.0, "Höhe des Etiketts")
+        custom_size = QWidget()
+        custom_row = QHBoxLayout(custom_size)
+        custom_row.setContentsMargins(0, 0, 0, 0)
+        custom_row.addWidget(self.spin_width, 1)
+        custom_row.addWidget(QLabel("×"))
+        custom_row.addWidget(self.spin_height, 1)
 
         self.cmb_theme = QComboBox()
         for theme in LabelTheme:
@@ -216,10 +245,14 @@ class LabelDialog(QDialog):
         form.addRow("Untertitel", self.txt_subtitle)
         form.addRow("Fußzeile", self.txt_footer)
         form.addRow("Format", self.cmb_size)
+        form.addRow("Maße", custom_size)
         form.addRow("Farbe", self.cmb_theme)
         form.addRow("Auflösung", self.cmb_dpi)
         settings.body.addLayout(form)
         cards.addWidget(settings)
+        self._design_form = form
+        form.setRowVisible(custom_size, False)
+        self._custom_size = custom_size
 
         content = Card("Inhalt")
         self.chk_date = QCheckBox("Backdatum anzeigen")
@@ -339,8 +372,11 @@ class LabelDialog(QDialog):
             line_edit.textChanged.connect(self._refresh)
         self.txt_producer.textChanged.connect(self._refresh)
         # Die Auflösung zählt mit: Geprüft wird das Etikett, wie es gedruckt wird.
-        for combo in (self.cmb_size, self.cmb_theme, self.cmb_dpi):
+        for combo in (self.cmb_theme, self.cmb_dpi):
             combo.currentIndexChanged.connect(self._refresh)
+        self.cmb_size.currentIndexChanged.connect(self._on_size_changed)
+        for spin in (self.spin_width, self.spin_height):
+            spin.valueChanged.connect(self._refresh)
         for check in (
             self.chk_date,
             self.chk_ingredients,
@@ -360,6 +396,11 @@ class LabelDialog(QDialog):
         self.btn_print.clicked.connect(self._on_print)
         self.btn_preview_print.clicked.connect(self._on_print_preview)
         self.btn_close.clicked.connect(self.reject)
+
+    def _on_size_changed(self) -> None:
+        """Blendet die Maßfelder ein, wenn das eigene Format gewählt ist."""
+        self._design_form.setRowVisible(self._custom_size, self.cmb_size.currentData() is None)
+        self._refresh()
 
     def _build_sale_card(self) -> Card:
         """Karte „Verkauf“: Schalter, Hersteller und Lagerhinweis."""
@@ -454,7 +495,12 @@ class LabelDialog(QDialog):
         return LabelOptions(
             title=self.txt_title.text().strip() or "Hausgemachtes Brot",
             subtitle=self.txt_subtitle.text().strip(),
-            size=self.cmb_size.currentData(),
+            size=self.cmb_size.currentData() or LabelSize.MEDIUM,
+            custom_mm=(
+                (self.spin_width.value(), self.spin_height.value())
+                if self.cmb_size.currentData() is None
+                else None
+            ),
             theme=self.cmb_theme.currentData(),
             dpi=dpi,
             show_date=self.chk_date.isChecked(),
@@ -536,7 +582,7 @@ class LabelDialog(QDialog):
     def _update_dimensions(self) -> None:
         options = self._options(dpi=self.cmb_dpi.currentData())
         width, height = options.pixel_size()
-        mm_w, mm_h = options.size.millimeters
+        mm_w, mm_h = options.millimeters
         self.lbl_dimensions.setText(
             f"{mm_w:.0f} × {mm_h:.0f} mm · {width} × {height} Pixel bei {options.dpi} dpi"
         )
@@ -670,7 +716,7 @@ class LabelDialog(QDialog):
         # zählte der Druckerrand doppelt, einmal von Qt und einmal hier.
         printer.setFullPage(True)
         paper = printer.pageLayout().fullRect(QPageLayout.Unit.Millimeter)
-        placement = centered(options.size.millimeters, (paper.width(), paper.height()))
+        placement = centered(options.millimeters, (paper.width(), paper.height()))
         painter = QPainter()
         if not painter.begin(printer):  # pragma: no cover - Druckerfehler
             QMessageBox.critical(self, "Drucken", "Der Drucker konnte nicht geöffnet werden.")

@@ -108,6 +108,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Geprüft wird in Druckauflösung; offene Punkte stehen unter den
   Einstellungen, Speichern und Drucken fragen dann nach. Die Einstellungen des
   Dialogs liegen dafür in einem Rollbereich.
+- **Eigenes Etikettformat.** Neben den vier festen Formaten lässt sich jedes
+  Format von 30 bis 297 mm je Seite einstellen - etwa die Maße der Etiketten
+  auf einem Bogen, die auf dessen Verpackung stehen. Auch dort bricht jeder
+  Text um, einschließlich der Abschnittsüberschriften und Tabellenwerte, die
+  bisher fest in einer Zeile standen. Bilder über 40 Millionen Pixel (etwa
+  A4 in 1200 dpi) lehnt das Etikett ab, statt den Speicher zu füllen.
 
 ### Geändert
 

@@ -36,6 +36,9 @@ from brotrechner.core.sales import SaleIssue
 from brotrechner.export.fonts import Font, FontSet, ink_height, load_font_set
 
 __all__ = [
+    "MAX_LABEL_MM",
+    "MAX_LABEL_PIXELS",
+    "MIN_LABEL_MM",
     "MIN_X_HEIGHT_MM",
     "LabelOptions",
     "LabelReport",
@@ -66,7 +69,19 @@ _DIGITS: Final = "0123456789"
 #: Rechenungenauigkeit beim Vergleich von Millimetern aus ganzen Pixeln.
 _EPSILON: Final = 1e-9
 
+#: Grenzen für ein eigenes Format. Nach unten bleiben nach den Rändern 16 mm
+#: Breite für den Inhalt; nach oben ist ein A4-Blatt die Grenze - größer ist
+#: kein Etikett, und das Bild wüchse ins Unermessliche.
+MIN_LABEL_MM: Final = 30.0
+MAX_LABEL_MM: Final = 297.0
+
+#: Höchstzahl an Pixeln eines Etikettbilds. Ein Blatt A4 in 600 dpi hat rund
+#: 35 Millionen; in 1200 dpi wären es 139 Millionen und über 400 MB Speicher.
+MAX_LABEL_PIXELS: Final = 40_000_000
+
 _NET_WEIGHT_WORD: Final = "Nettogewicht"
+_NUTRITION_HEADING: Final = "Nährwerte je 100 g"
+_INGREDIENTS_HEADING: Final = "Zutaten"
 
 
 def required_digit_height_mm(grams: float) -> float:
@@ -185,10 +200,19 @@ class LabelOptions:
     producer: str = ""
     #: Aufbewahrungshinweis, etwa "Trocken und bei Raumtemperatur lagern."
     storage_hint: str = ""
+    #: Eigenes Format (Breite, Höhe) in Millimetern - etwa die Etiketten eines
+    #: Bogens, die keinem der festen Formate entsprechen. Hat Vorrang vor
+    #: ``size``.
+    custom_mm: tuple[float, float] | None = None
+
+    @property
+    def millimeters(self) -> tuple[float, float]:
+        """Breite und Höhe des Etiketts in Millimetern."""
+        return self.custom_mm if self.custom_mm is not None else self.size.millimeters
 
     def pixel_size(self) -> tuple[int, int]:
         """Bildgröße in Pixeln für die gewählte Auflösung."""
-        width_mm, height_mm = self.size.millimeters
+        width_mm, height_mm = self.millimeters
         return (
             max(1, round(width_mm / 25.4 * self.dpi)),
             max(1, round(height_mm / 25.4 * self.dpi)),
@@ -462,7 +486,9 @@ def render_label(
         RGB-Bild in der in ``options`` gewählten Größe.
 
     Raises:
-        ValueError: Bei unsinniger Auflösung oder negativem Nettogewicht.
+        ValueError: Bei unsinniger Auflösung, negativem Nettogewicht, einem
+            Format außerhalb von :data:`MIN_LABEL_MM` bis :data:`MAX_LABEL_MM`
+            oder mehr als :data:`MAX_LABEL_PIXELS` Pixeln.
     """
     return _render(nutrients, options, fonts or load_font_set())[0]
 
@@ -475,6 +501,18 @@ def _render(
         raise ValueError(f"Auflösung muss zwischen 36 und 1200 dpi liegen, war {options.dpi}")
     if options.net_weight_g < 0:
         raise ValueError(f"Nettogewicht darf nicht negativ sein, war {options.net_weight_g}")
+    if not all(MIN_LABEL_MM <= side <= MAX_LABEL_MM for side in options.millimeters):
+        width_mm, height_mm = options.millimeters
+        raise ValueError(
+            f"Etikettformat muss je Seite zwischen {MIN_LABEL_MM:g} und {MAX_LABEL_MM:g} mm "
+            f"liegen, war {width_mm:g} × {height_mm:g} mm"
+        )
+    pixels = options.pixel_size()
+    if pixels[0] * pixels[1] > MAX_LABEL_PIXELS:
+        raise ValueError(
+            f"Etikett zu groß für {options.dpi} dpi: {pixels[0]} × {pixels[1]} Pixel - "
+            "bitte eine kleinere Auflösung wählen"
+        )
 
     palette = options.theme.colors
     width, height = options.pixel_size()
@@ -703,7 +741,9 @@ def _required_height(
     total += m.scaled(1.6) + m.scaled(3.4)  # Trennlinie mit Abstand
 
     rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=inner_width)
-    total += m.line(2.9, 4.6) + sum(row.height(m) for row in rows) + m.scaled(3.0)
+    header = _wrap(draw, _NUTRITION_HEADING, _font_section(fonts, m), inner_width)
+    total += _heading_height(header, m, gap_mm=4.6)
+    total += sum(row.height(m) for row in rows) + m.scaled(3.0)
 
     if options.net_weight_g > 0:
         total += _net_weight_layout(draw, options, fonts, m, inner_width).height(m)
@@ -730,8 +770,11 @@ def _body_height(
             nur mit einer - es darf sich auf einem Geschenketikett kürzen.
     """
     if _shows_ingredients(options):
+        heading = _heading_height(
+            _wrap(draw, _INGREDIENTS_HEADING, _font_section(fonts, m), width), m, gap_mm=4.0
+        )
         if not full_ingredients:
-            return m.line(2.9, 4.0) + m.line(2.1, 3.0)
+            return heading + m.line(2.1, 3.0)
         lines = _wrap_runs(
             draw,
             _ingredient_runs(options),
@@ -739,7 +782,7 @@ def _body_height(
             _font_small(fonts, m, bold=True),
             width,
         )
-        return m.line(2.9, 4.0) + len(lines) * m.line(2.1, 3.0)
+        return heading + len(lines) * m.line(2.1, 3.0)
     if options.allergen_note.strip():
         note = _wrap(draw, single_line(options.allergen_note), _font_small(fonts, m), width)
         return m.scaled(1.0) + len(note) * m.line(2.1, 3.0)
@@ -833,6 +876,38 @@ def _title_layout(
     return font, _wrap(draw, text, font, width), line_height
 
 
+def _heading_height(lines: Sequence[str], m: _Metrics, *, gap_mm: float) -> int:
+    """Höhe einer Abschnittsüberschrift samt Abstand zum Inhalt darunter."""
+    return max(0, len(lines) - 1) * m.line(2.9, 3.6) + m.line(2.9, gap_mm)
+
+
+def _draw_heading(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    *,
+    colour: str,
+    fonts: FontSet,
+    m: _Metrics,
+    left: int,
+    width: int,
+    top: int,
+    gap_mm: float,
+) -> int:
+    """Zeichnet eine Abschnittsüberschrift - auf schmalem Etikett umbrochen.
+
+    Returns:
+        Das ``y``, an dem der Abschnitt beginnt.
+    """
+    font = _font_section(fonts, m)
+    lines = _wrap(draw, text, font, width)
+    y = top
+    for index, line in enumerate(lines):
+        if index:
+            y += m.line(2.9, 3.6)
+        draw.text((left, y), line, fill=colour, font=font)
+    return top + _heading_height(lines, m, gap_mm=gap_mm)
+
+
 def _date_rows(
     draw: ImageDraw.ImageDraw, options: LabelOptions, font: Font, width: int
 ) -> list[str]:
@@ -851,13 +926,17 @@ class _TableRow:
     """
 
     label_lines: tuple[str, ...]
-    value: str
+    #: Der Wert; mehr als eine Zeile nur, wenn er allein breiter als das
+    #: Etikett ist.
+    value_lines: tuple[str, ...]
     indented: bool
     emphasised: bool
     value_below: bool
 
     def height(self, m: _Metrics) -> int:
-        extra = len(self.label_lines) - 1 + int(self.value_below)
+        extra = len(self.label_lines) - 1
+        if self.value_below:
+            extra += len(self.value_lines)
         return m.line(2.7, 4.2) + extra * m.line(2.7, 3.3)
 
 
@@ -878,13 +957,15 @@ def _table_rows(
         font = _font_body(fonts, m, bold=emphasised)
         indent = m.scaled(3.0) if indented else 0
         room = width - indent - m.scaled(2.0) - draw.textlength(value, font=font)
+        values = [value]
         if draw.textlength(label, font=font) <= room:
             lines, below = [label], False
         elif all(draw.textlength(word, font=font) <= room for word in label.split(" ")):
             lines, below = _wrap(draw, label, font, int(room)), False
         else:
             lines, below = _wrap(draw, label, font, width - indent), True
-        rows.append(_TableRow(tuple(lines), value, indented, emphasised, below))
+            values = _wrap(draw, value, font, width - indent)
+        rows.append(_TableRow(tuple(lines), tuple(values), indented, emphasised, below))
     return rows
 
 
@@ -902,13 +983,16 @@ class _NetWeightLayout:
     value_font: Font
     one_line: bool
     fits_width: bool
-    #: Höhe der Zeile, in der das Wort allein steht.
+    #: Das Wort, wenn es allein steht - umbrochen, falls das Etikett schmaler ist.
+    word_lines: tuple[str, ...]
+    #: Höhe einer Zeile, in der das Wort allein steht.
     word_line: int
     #: Höhe der Zeile mit der Menge samt Abstand darunter.
     value_line: int
 
     def height(self, m: _Metrics) -> int:
-        return m.scaled(2.8) + (0 if self.one_line else self.word_line) + self.value_line
+        words = 0 if self.one_line else len(self.word_lines) * self.word_line
+        return m.scaled(2.8) + words + self.value_line
 
 
 def _net_weight_layout(
@@ -944,6 +1028,7 @@ def _net_weight_layout(
         value_font=value_font,
         one_line=together <= width,
         fits_width=fits_width,
+        word_lines=tuple(_wrap(draw, _NET_WEIGHT_WORD, word_font, width)),
         word_line=m.line(3.6, 4.4),
         value_line=value_px + m.line(3.6, 6.0) - word_px,
     )
@@ -1044,8 +1129,17 @@ def _draw_nutrition(
     top: int,
 ) -> int:
     """Überschrift und Nährwerttabelle."""
-    draw.text((left, top), "Nährwerte je 100 g", fill=palette.accent, font=_font_section(fonts, m))
-    y = top + m.line(2.9, 4.6)
+    y = _draw_heading(
+        draw,
+        _NUTRITION_HEADING,
+        colour=palette.accent,
+        fonts=fonts,
+        m=m,
+        left=left,
+        width=right - left,
+        top=top,
+        gap_mm=4.6,
+    )
 
     rows = _table_rows(draw, nutrients, options, fonts=fonts, m=m, width=right - left)
     panel_top = y - m.scaled(1.2)
@@ -1068,9 +1162,10 @@ def _draw_nutrition(
             if index:
                 line_y += m.line(2.7, 3.3)
             draw.text((x, line_y), text, fill=colour, font=font)
-        if row.value_below:
-            line_y += m.line(2.7, 3.3)
-        draw.text((right, line_y), row.value, fill=colour, font=font, anchor="ra")
+        for text in row.value_lines:
+            if row.value_below:
+                line_y += m.line(2.7, 3.3)
+            draw.text((right, line_y), text, fill=colour, font=font, anchor="ra")
         y += row.height(m)
 
     return y + m.scaled(3.0)
@@ -1113,8 +1208,9 @@ def _draw_net_weight(
             anchor="ls",
         )
     else:
-        draw.text((centre, y), _NET_WEIGHT_WORD, fill=colour, font=layout.word_font, anchor="ma")
-        y += layout.word_line
+        for word in layout.word_lines:
+            draw.text((centre, y), word, fill=colour, font=layout.word_font, anchor="ma")
+            y += layout.word_line
         draw.text((centre, y), layout.value, fill=colour, font=layout.value_font, anchor="ma")
     return y + layout.value_line
 
@@ -1167,8 +1263,17 @@ def _draw_ingredients(
     Returns:
         ``True``, wenn das Verzeichnis vollständig auf dem Etikett steht.
     """
-    draw.text((left, top), "Zutaten", fill=palette.accent, font=_font_section(fonts, m))
-    y = top + m.line(2.9, 4.0)
+    y = _draw_heading(
+        draw,
+        _INGREDIENTS_HEADING,
+        colour=palette.accent,
+        fonts=fonts,
+        m=m,
+        left=left,
+        width=right - left,
+        top=top,
+        gap_mm=4.0,
+    )
     available = bottom - y
     if available <= 0:
         return False

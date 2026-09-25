@@ -18,8 +18,8 @@ Läuft unter **Linux, Windows und macOS**.
 Nährwerte je 100 g, Bäckerprozent, Teigausbeute, Hydration und Kosten stehen
 sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
 
-**Etikettieren.** Ein Nährwert-Etikett in vier Formaten und drei Farbstimmungen,
-mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog –
+**Etikettieren.** Ein Nährwert-Etikett in vier Formaten oder einem eigenen
+(30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog –
 ohne Umweg über eine Datei, gedruckt in Originalgröße. Aufbau und Reihenfolge folgen Anhang XV der
 VO (EU) Nr. 1169/2011. Backdatum und Mindesthaltbarkeit sind frei wählbar: Das
 Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
