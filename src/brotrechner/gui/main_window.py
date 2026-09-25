@@ -76,6 +76,12 @@ _PAGES: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _file_stem(name: str, fallback: str) -> str:
+    """Dateiname ohne Endung aus einem Rezeptnamen - ohne Pfadtrenner und Sonderzeichen."""
+    safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip()
+    return safe or fallback
+
+
 class MainWindow(QMainWindow):
     """Fenster des Programms."""
 
@@ -200,6 +206,7 @@ class MainWindow(QMainWindow):
         self._add_action(file_menu, "Ausgabeordner wählen …", self._on_choose_export_dir)
         file_menu.addSeparator()
         self._add_action(file_menu, "Zutaten als CSV …", self._on_export_csv)
+        self._add_action(file_menu, "Auswertung als CSV …", self._on_export_analysis_csv)
         self._add_action(file_menu, "PDF-Bericht …", self._on_report, "Ctrl+P")
         self._add_action(file_menu, "Etikett …", self._on_label, "Ctrl+E")
         file_menu.addSeparator()
@@ -887,6 +894,32 @@ class MainWindow(QMainWindow):
             return
         self._flash(f"{count} Zutaten nach {Path(target).name} exportiert")
 
+    def _on_export_analysis_csv(self) -> None:
+        """Speichert die Auswertung des Rezepts im Rechner - zum Weiterrechnen in Excel."""
+        if self._analysis.is_empty:
+            QMessageBox.information(
+                self, "Kein Rezept", "Bitte zuerst Zutaten in den Rechner eintragen."
+            )
+            return
+        name = self.page_calculator.recipe_name
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "Auswertung als CSV",
+            str(self._export_dir() / f"{_file_stem(name, 'Auswertung')}.csv"),
+            "CSV-Datei (*.csv)",
+        )
+        if not target:
+            return
+        path = Path(target)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+        try:
+            count = table.write_analysis_csv(path, self._analysis, recipe_name=name)
+        except OSError as exc:
+            QMessageBox.critical(self, "Export fehlgeschlagen", str(exc))
+            return
+        self._flash(f"Auswertung ({count} Zutaten) nach {path.name} exportiert")
+
     def _on_validate(self) -> None:
         findings = validate_database(self._ingredients)
         ValidationDialog(findings, self._tokens, self).exec()
@@ -979,11 +1012,10 @@ class MainWindow(QMainWindow):
             )
             return
         name = self.page_calculator.recipe_name
-        safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip()
         target, _ = QFileDialog.getSaveFileName(
             self,
             "PDF-Bericht speichern",
-            str(self._export_dir() / f"{safe or 'Bericht'}.pdf"),
+            str(self._export_dir() / f"{_file_stem(name, 'Bericht')}.pdf"),
             "PDF-Datei (*.pdf)",
         )
         if not target:

@@ -78,6 +78,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Rezept namens …“ - gemeint war das Rezept selbst. Außerdem übernimmt der
   Rechner jetzt den neuen Namen, wenn das Rezept dort geladen ist; das
   nächste Speichern legte sonst ein Duplikat unter dem alten Namen an.
+- **Die Auswertung eines Rezepts ließ sich nicht als CSV speichern.** Die
+  Funktion dafür gab es, erreichbar war aber nur „Zutaten als CSV“ - die
+  Datenbank, nicht das Rezept. Jetzt gibt es „Datei → Auswertung als CSV …“
+  mit Mengen, Anteilen, Bäckerprozenten und Kosten je Zutat.
 - **Ungespeicherte Arbeit im Rechner ging ohne Rückfrage verloren.** „Neu /
   leeren“, das Laden eines anderen Rezepts und das Beenden verwarfen den
   Rechner ohne ein Wort. Jetzt fragt das Programm „Speichern, Verwerfen oder

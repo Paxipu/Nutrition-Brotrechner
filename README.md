@@ -54,9 +54,10 @@ Etikett.
 
 **Verwalten.** Zutaten mit eigenem Herstellerfeld, Preisen samt Quelle und
 Preisstand, Preishistorie, Import und Export einzelner Zutaten als JSON,
-Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export. Zu jeder Zutat gehören
-ihre **Allergene nach Anhang II** und die **Bezeichnung im Zutatenverzeichnis**,
-in der das Allergen markiert ist (`*Weizen*mehl Type 550`). Die Startdatenbank
+Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export der Zutaten und der
+Rezeptauswertung. Zu jeder Zutat gehören ihre **Allergene nach Anhang II** und
+die **Bezeichnung im Zutatenverzeichnis**, in der das Allergen markiert ist
+(`*Weizen*mehl Type 550`). Die Startdatenbank
 bringt beides für alle 107 Zutaten mit; wo es vom gekauften Produkt abhängt –
 Margarine, Essig, Trockenfrüchte, Oliven –, bleibt es bewusst „nicht erfasst“,
 bis jemand die Packung angesehen hat.
