@@ -17,7 +17,7 @@ from brotrechner.core.analysis import ResolvedItem, analyze
 from brotrechner.core.models import Ingredient, Recipe, RecipeItem
 from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients
 from brotrechner.core.plausibility import check_process
-from brotrechner.core.portions import SUGGESTED_NAMES, Portion
+from brotrechner.core.portions import MAX_NAME_LENGTH, SUGGESTED_NAMES, Portion
 from brotrechner.core.validation import Severity
 
 FLOUR = Ingredient(
@@ -61,6 +61,12 @@ class TestPortion:
         with pytest.raises(ValueError, match="Portion"):
             Portion("Scheibe", weight)
 
+    def test_a_name_is_short(self) -> None:
+        """Sie steht im Kopf einer schmalen Spalte - "Scheibe", kein Satz."""
+        assert Portion("x" * MAX_NAME_LENGTH, 10.0).name == "x" * MAX_NAME_LENGTH
+        with pytest.raises(ValueError, match="Bezeichnung"):
+            Portion("x" * (MAX_NAME_LENGTH + 1), 10.0)
+
     def test_the_suggestions_are_valid_names(self) -> None:
         assert "Scheibe" in SUGGESTED_NAMES
         assert all(Portion(name, 10.0).name == name for name in SUGGESTED_NAMES)
@@ -91,6 +97,12 @@ class TestCount:
 
     def test_the_count_as_a_number(self) -> None:
         assert Portion("Scheibe", 50.0).count(996.0) == pytest.approx(19.92)
+
+    def test_the_rounded_count(self) -> None:
+        portion = Portion("Scheibe", 50.0)
+        assert portion.rounded_count(1000.0) == (20, False)
+        assert portion.rounded_count(996.0) == (20, True)
+        assert portion.rounded_count(1025.0) == (21, True)
 
     @pytest.mark.parametrize("grams", [math.inf, math.nan])
     def test_a_count_needs_a_real_weight(self, grams: float) -> None:
@@ -145,7 +157,7 @@ class TestSerialisation:
         assert Portion.from_dict(portion.to_dict()) == portion
 
     @given(
-        name=st.text(max_size=30),
+        name=st.text(max_size=MAX_NAME_LENGTH),
         weight=st.floats(min_value=0.1, max_value=100_000.0),
     )
     def test_any_valid_portion_survives_saving(self, name: str, weight: float) -> None:
@@ -173,6 +185,13 @@ class TestSerialisation:
 
     def test_a_number_as_text_is_read(self) -> None:
         assert Portion.from_dict({"name": "Scheibe", "weight_g": "50"}) == Portion("Scheibe", 50)
+
+    def test_a_long_name_is_shortened(self) -> None:
+        """Von Hand verlängert: Das Gewicht ist das Wichtige, der Name wird gekürzt."""
+        data = {"name": "Scheibe " * 10, "weight_g": 50}
+        portion = Portion.from_dict(data)
+        assert portion is not None
+        assert portion.name == ("Scheibe " * 10)[:MAX_NAME_LENGTH].strip()
 
     def test_a_non_text_name_is_read_as_text(self) -> None:
         assert Portion.from_dict({"name": 7, "weight_g": 50}) == Portion("7", 50.0)

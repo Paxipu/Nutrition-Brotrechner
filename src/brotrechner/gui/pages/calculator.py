@@ -54,7 +54,7 @@ from brotrechner.core.analysis import (
 )
 from brotrechner.core.models import Ingredient, Recipe, RecipeItem
 from brotrechner.core.plausibility import ProcessFinding, check_process, has_errors
-from brotrechner.core.portions import MAX_WEIGHT_G, SUGGESTED_NAMES, Portion
+from brotrechner.core.portions import MAX_NAME_LENGTH, MAX_WEIGHT_G, SUGGESTED_NAMES, Portion
 from brotrechner.core.validation import Severity
 from brotrechner.gui.models.recipe_model import RECIPE_COLUMNS, RecipeItemsModel
 from brotrechner.gui.theme import SPACING, Tokens
@@ -71,10 +71,6 @@ _RECALC_DELAY_MS = 180
 
 #: Überschrift der Nährwertkarte, solange sie Werte je 100 g zeigt.
 _NUTRITION_TITLE = "Nährwerte je 100 g gebacken"
-
-#: Längste Bezeichnung einer Portion. Sie steht auf dem Etikett im Kopf einer
-#: schmalen Spalte - "Scheibe" oder "Brötchen", kein Satz.
-_PORTION_NAME_MAX = 24
 
 
 class CalculatorPage(QWidget):
@@ -250,7 +246,7 @@ class CalculatorPage(QWidget):
         self.cmb_portion.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         edit = self.cmb_portion.lineEdit()
         if edit is not None:
-            edit.setMaxLength(_PORTION_NAME_MAX)
+            edit.setMaxLength(MAX_NAME_LENGTH)
         self.cmb_portion.setToolTip(
             "Bezeichnung einer Portion, etwa Scheibe oder Brötchen - aus der Liste\n"
             "oder frei eingetragen."

@@ -87,6 +87,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Komma verwenden. Dasselbe galt für die Anteilsspalte im Rechner („60.0 %“
   neben „600,0“ g), Skalierungsfaktor und Backverlust dort sowie die Meldungen
   zu Backverlust, Massenbilanz und Mehlanteil. Jetzt steht überall das Komma.
+- **Die Kostenübersicht im PDF-Bericht wurde über den Seitenumbruch
+  verteilt.** Reichte der Platz nicht, standen die letzten Zeilen allein oben
+  auf der nächsten Seite. Jetzt rückt die Übersicht als Ganzes weiter.
 - **Ungespeicherte Arbeit im Rechner ging ohne Rückfrage verloren.** „Neu /
   leeren“, das Laden eines anderen Rezepts und das Beenden verwarfen den
   Rechner ohne ein Wort. Jetzt fragt das Programm „Speichern, Verwerfen oder
@@ -200,7 +203,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nicht. Auch die Rezeptvorschau nennt Brennwert, Preis und Zahl der
   Portionen. Eine Portion, die schwerer ist als das ganze Brot, meldet die
   Plausibilitätsprüfung. Rezepte älterer Versionen haben keine Portion; eine
-  unlesbare Portionsangabe kostet nicht das ganze Rezept.
+  unlesbare Portionsangabe kostet nicht das ganze Rezept. Der PDF-Bericht
+  zeigt die Werte je Portion als eigene Spalte neben „je 100 g“, Portion und
+  Zahl der Portionen in den Eckdaten und den Preis je Portion. Die
+  Bezeichnung einer Portion hat höchstens 24 Zeichen, damit sie in die
+  Tabellenköpfe passt.
 
 ### Geändert
 

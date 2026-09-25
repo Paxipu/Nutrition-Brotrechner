@@ -11,6 +11,7 @@ Klick mit einem Importfehler abzustürzen.
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -24,12 +25,13 @@ __all__ = ["ReportError", "is_available", "write_report"]
 
 try:  # pragma: no cover - abhängig von der Installation
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import (
         HRFlowable,
+        KeepTogether,
         Paragraph,
         SimpleDocTemplate,
         Spacer,
@@ -54,6 +56,12 @@ def is_available() -> bool:
 _ACCENT = "#2F6B3A"
 _SECONDARY = "#1B5E86"
 _DANGER = "#B3261E"
+
+#: Spaltenbreiten der Nährwerttabelle in cm, ohne und mit Spalte je Portion.
+#: Mit ihr wird es eng: Jede Spalte ist so breit wie ihr längster Text samt
+#: Innenabstand, zusammen 16,6 der 17 cm zwischen den Rändern.
+_NUTRITION_WIDTHS = (5.0, 3.6, 3.6, 1.8, 2.0)
+_NUTRITION_WIDTHS_WITH_PORTION = (4.4, 3.3, 3.3, 2.7, 1.3, 1.6)
 
 
 def write_report(
@@ -104,6 +112,11 @@ def write_report(
     small = ParagraphStyle("BrSmall", parent=styles["Normal"], fontSize=7.5, textColor=colors.grey)
     centred = ParagraphStyle("BrCentred", parent=styles["Normal"], alignment=TA_CENTER)
 
+    portion_note = (
+        ", die Werte je Portion ebenso, berechnet aus den ungerundeten Werten je 100 g"
+        if analysis.per_portion is not None
+        else ""
+    )
     story: list[Any] = [
         Paragraph(recipe_name, title_style),
         Paragraph(
@@ -123,15 +136,17 @@ def write_report(
             "Ballaststoffe haben keine EU-Referenzmenge; verglichen wird mit dem "
             "DGE-Richtwert von 30 g je Tag. "
             "Die Werte je 100 g sind wie auf dem Etikett nach der Rundungsregel der "
-            "EU-Leitlinie von 2012 gerundet. Die Bandbreite ist die zulässige "
-            "Abweichung eines Laborwerts des fertigen Brots nach den Toleranzen "
-            "derselben Leitlinie.",
+            f"EU-Leitlinie von 2012 gerundet{portion_note}. Bandbreite, % RM und Ampel "
+            "beziehen sich auf 100 g. Die Bandbreite ist die zulässige Abweichung eines "
+            "Laborwerts des fertigen Brots nach den Toleranzen derselben Leitlinie.",
             small,
         ),
         Paragraph("Zutaten, Bäckerprozent und Kosten", h2),
         _ingredients_table(analysis),
         Spacer(1, 10),
-        _cost_summary(analysis),
+        # Nie über einen Seitenumbruch verteilt: Sonst stand der Preis je
+        # Portion allein oben auf der nächsten Seite.
+        KeepTogether([_cost_summary(analysis)]),
     ]
 
     if analysis.lines_without_price:
@@ -194,7 +209,16 @@ def _facts_table(analysis: RecipeAnalysis) -> Any:
             f"{analysis.hydration_percent:.0f} %" if analysis.dough_yield else "-",
         ],
     ]
-    table = Table(rows, colWidths=[3.6 * cm, 3.0 * cm, 3.6 * cm, 3.0 * cm], hAlign="LEFT")
+    portion = analysis.portion
+    if portion is not None:
+        count = "-"
+        if analysis.portion_count is not None and portion.fits_into(analysis.baked_weight_g):
+            number, approximate = portion.rounded_count(analysis.baked_weight_g)
+            count = f"ca. {number}" if approximate else str(number)
+        rows.append(["Portion", _right(portion.title, size=9), "Portionen", count])
+    # Breit genug für eine lange Portion wie "Kastenweißbrotscheibe", die sonst
+    # mitten im Wort umbrach.
+    table = Table(rows, colWidths=[3.6 * cm, 4.2 * cm, 3.6 * cm, 4.2 * cm], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [
@@ -210,11 +234,43 @@ def _facts_table(analysis: RecipeAnalysis) -> Any:
     return table
 
 
+def _right(text: str, *, size: float, bold: bool = False) -> Any:
+    """Rechtsbündiger Absatz für eine Tabellenzelle - er bricht um, statt überzulaufen.
+
+    Einfacher Text läuft in einer reportlab-Tabelle über den Zellrand in die
+    Nachbarzelle. Bei Texten aus der Eingabe, etwa der Portion, ist die Länge
+    nicht bekannt.
+    """
+    style = ParagraphStyle(
+        "BrCell",
+        fontName="Helvetica-Bold" if bold else "Helvetica",
+        fontSize=size,
+        leading=size * 1.2,
+        alignment=TA_RIGHT,
+    )
+    return Paragraph(escape(text), style)
+
+
+def _declared(name: str, value: float) -> str:
+    """Angabe eines Nährwerts wie auf dem Etikett."""
+    if name == "energy_kcal":
+        return declare_energy(as_declarable(value))
+    return declare_nutrient(name, as_declarable(value)).text
+
+
 def _nutrition_table(analysis: RecipeAnalysis) -> Any:
-    """Nährwerttabelle mit Bandbreite, Referenzmenge und Ampel."""
+    """Nährwerttabelle mit Bandbreite, Referenzmenge und Ampel.
+
+    Mit einer Portion steht neben "je 100 g" eine Spalte "je Scheibe (50 g)".
+    """
     nutrients = analysis.per_100g
-    header = ["Nährstoff", "je 100 g", "Bandbreite", "% RM", "Ampel"]
-    rows: list[list[str]] = [header]
+    portion = analysis.portion
+    per_portion = analysis.per_portion
+    header: list[Any] = ["Nährstoff", "je 100 g"]
+    if portion is not None and per_portion is not None:
+        header.append(_right(f"je {portion.title}", size=8.5, bold=True))
+    header += ["Bandbreite", "% RM", "Ampel"]
+    rows: list[list[Any]] = [header]
 
     order = [
         "energy_kcal",
@@ -230,7 +286,6 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
         value = getattr(nutrients, name)
         value_range = analysis.ranges_per_100g.get(name)
         if name == "energy_kcal":
-            shown = declare_energy(as_declarable(value))
             band = (
                 f"{value_range.minimum:.0f} - {value_range.maximum:.0f} kcal"
                 if value_range
@@ -238,7 +293,6 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
             )
         else:
             decimals = 2 if name == "salt" else 1
-            shown = declare_nutrient(name, as_declarable(value)).text
             band = (
                 f"{format_number(value_range.minimum, decimals)} - "
                 f"{format_number(value_range.maximum, decimals)} g"
@@ -247,17 +301,14 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
             )
         percent = reference_intake_percent(name, value)
         light = traffic_light(name, value)
-        rows.append(
-            [
-                NUTRIENT_LABELS[name],
-                shown,
-                band,
-                f"{percent:.0f} %" if percent is not None else "-",
-                light.label,
-            ]
-        )
+        row = [NUTRIENT_LABELS[name], _declared(name, value)]
+        if per_portion is not None:
+            row.append(_declared(name, getattr(per_portion, name)))
+        row += [band, f"{percent:.0f} %" if percent is not None else "-", light.label]
+        rows.append(row)
 
-    table = Table(rows, colWidths=[5.0 * cm, 3.6 * cm, 3.6 * cm, 1.8 * cm, 2.0 * cm], hAlign="LEFT")
+    widths = _NUTRITION_WIDTHS_WITH_PORTION if len(header) == 6 else _NUTRITION_WIDTHS
+    table = Table(rows, colWidths=[width * cm for width in widths], hAlign="LEFT")
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -331,7 +382,11 @@ def _cost_summary(analysis: RecipeAnalysis) -> Any:
         ["Preis je 100 g", format_currency(analysis.cost_per_100g)],
         ["Preis je Kilogramm", format_currency(analysis.cost_per_kg)],
     ]
-    table = Table(rows, colWidths=[8.0 * cm, 3.4 * cm], hAlign="RIGHT")
+    if analysis.portion is not None and analysis.cost_per_portion is not None:
+        rows.append(
+            [f"Preis je {analysis.portion.title}", format_currency(analysis.cost_per_portion)]
+        )
+    table = Table(rows, colWidths=[10.0 * cm, 3.4 * cm], hAlign="RIGHT")
     table.setStyle(
         TableStyle(
             [

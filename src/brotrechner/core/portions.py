@@ -22,10 +22,21 @@ from typing import Final
 
 from brotrechner.core.nutrients import Nutrients
 
-__all__ = ["DEFAULT_NAME", "MAX_WEIGHT_G", "MIN_WEIGHT_G", "SUGGESTED_NAMES", "Portion"]
+__all__ = [
+    "DEFAULT_NAME",
+    "MAX_NAME_LENGTH",
+    "MAX_WEIGHT_G",
+    "MIN_WEIGHT_G",
+    "SUGGESTED_NAMES",
+    "Portion",
+]
 
 #: Bezeichnung einer Portion ohne eigenen Namen.
 DEFAULT_NAME: Final = "Portion"
+
+#: Längste Bezeichnung. Sie steht im Kopf einer schmalen Tabellenspalte auf
+#: dem Etikett und im Bericht - "Scheibe" oder "Brötchen", kein Satz.
+MAX_NAME_LENGTH: Final = 24
 
 #: Kleinstes und größtes Portionsgewicht in Gramm. Was außerhalb liegt, ist
 #: ein Tippfehler oder eine kaputte Datei, keine Portion Brot.
@@ -60,14 +71,15 @@ class Portion:
     """Eine Portion des fertigen Brots.
 
     Attributes:
-        name: Bezeichnung in der Einzahl, etwa "Scheibe". Leerraum wird
-            vereinheitlicht; ohne Bezeichnung heißt sie :data:`DEFAULT_NAME`.
+        name: Bezeichnung in der Einzahl, etwa "Scheibe", höchstens
+            :data:`MAX_NAME_LENGTH` Zeichen. Leerraum wird vereinheitlicht;
+            ohne Bezeichnung heißt sie :data:`DEFAULT_NAME`.
         weight_g: Gewicht einer Portion in Gramm, von :data:`MIN_WEIGHT_G`
             bis :data:`MAX_WEIGHT_G`.
 
     Raises:
         ValueError: Bei einem Gewicht außerhalb dieses Bereichs, auch bei
-            ``nan`` und unendlich.
+            ``nan`` und unendlich, oder einer zu langen Bezeichnung.
     """
 
     name: str
@@ -79,8 +91,14 @@ class Portion:
             raise ValueError(
                 f"Eine Portion muss zwischen 0,1 g und 100 kg wiegen, war {self.weight_g!r}"
             )
+        name = _single_line(self.name) or DEFAULT_NAME
+        if len(name) > MAX_NAME_LENGTH:
+            raise ValueError(
+                f"Die Bezeichnung einer Portion hat höchstens {MAX_NAME_LENGTH} Zeichen, "
+                f"„{name}“ hat {len(name)}"
+            )
         # Eingefrorene Datenklasse: Die bereinigten Werte lassen sich nur so setzen.
-        object.__setattr__(self, "name", _single_line(self.name) or DEFAULT_NAME)
+        object.__setattr__(self, "name", name)
         object.__setattr__(self, "weight_g", float(self.weight_g))
 
     @property
@@ -103,8 +121,8 @@ class Portion:
         """Anzahl der Portionen in ``grams`` Brot."""
         return grams / self.weight_g
 
-    def count_text(self, grams: float) -> str:
-        """Anzahl der Portionen in Worten, etwa "20 Scheiben" oder "ca. 20 Scheiben".
+    def rounded_count(self, grams: float) -> tuple[int, bool]:
+        """Ganze Zahl der Portionen und ob sie nur ungefähr stimmt.
 
         Raises:
             ValueError: Wenn die Portion schwerer ist als ``grams`` - dann
@@ -118,7 +136,16 @@ class Portion:
             )
         exact = self.count(grams)
         number = math.floor(exact + 0.5)  # Halbe aufwärts, wie überall auf dem Etikett
-        prefix = "ca. " if abs(number - exact) > _EXACT_WITHIN else ""
+        return number, abs(number - exact) > _EXACT_WITHIN
+
+    def count_text(self, grams: float) -> str:
+        """Anzahl der Portionen in Worten, etwa "20 Scheiben" oder "ca. 20 Scheiben".
+
+        Raises:
+            ValueError: Wie :meth:`rounded_count`.
+        """
+        number, approximate = self.rounded_count(grams)
+        prefix = "ca. " if approximate else ""
         plural = _PLURALS.get(self.name.casefold())
         if plural is None:
             return f"{prefix}{number} × {self.name}"
@@ -140,7 +167,8 @@ class Portion:
         """Liest eine gespeicherte Portion.
 
         Ist sie unbrauchbar, gibt es eben keine: Eine kaputte Portionsangabe
-        darf nicht das ganze Rezept unlesbar machen.
+        darf nicht das ganze Rezept unlesbar machen. Eine zu lange Bezeichnung
+        wird gekürzt - das Gewicht ist die eigentliche Angabe.
         """
         if not isinstance(data, dict):
             return None
@@ -148,7 +176,8 @@ class Portion:
         if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
             return None
         try:
-            return cls(str(data.get("name") or ""), float(raw))
+            name = _single_line(str(data.get("name") or ""))[:MAX_NAME_LENGTH]
+            return cls(name, float(raw))
         except ValueError:
             return None
 
