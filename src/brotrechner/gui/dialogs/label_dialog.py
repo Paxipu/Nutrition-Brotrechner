@@ -21,8 +21,8 @@ from datetime import date
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QDate, QRectF, Qt
-from PySide6.QtGui import QImage, QPageLayout, QPainter, QPixmap, QResizeEvent
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QImage, QPixmap, QResizeEvent
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -61,10 +61,11 @@ from brotrechner.export.label import (
     render_and_measure,
     render_label,
 )
-from brotrechner.export.printing import centered
+from brotrechner.gui.printing import paint_labels, paper_mm, prepare_printer
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING
 from brotrechner.gui.widgets.cards import Card
+from brotrechner.gui.widgets.print_settings import PrintSettingsCard
 
 __all__ = ["LabelDialog", "pil_to_qimage"]
 
@@ -315,6 +316,8 @@ class LabelDialog(QDialog):
             content.add_widget(widget)
         cards.addWidget(content)
         cards.addWidget(self._build_sale_card())
+        self.print_card = PrintSettingsCard()
+        cards.addWidget(self.print_card)
         cards.addStretch(1)
 
         cards_widget = QWidget()
@@ -388,6 +391,7 @@ class LabelDialog(QDialog):
         self.chk_best_before.toggled.connect(self.date_best_before.setEnabled)
         self.chk_date.toggled.connect(self.date_baked.setEnabled)
         self.chk_for_sale.toggled.connect(self._on_for_sale_toggled)
+        self.print_card.changed.connect(self._update_print_summary)
         self.date_baked.dateChanged.connect(self._on_baked_changed)
         self.date_best_before.dateChanged.connect(self._on_best_before_changed)
 
@@ -496,11 +500,7 @@ class LabelDialog(QDialog):
             title=self.txt_title.text().strip() or "Hausgemachtes Brot",
             subtitle=self.txt_subtitle.text().strip(),
             size=self.cmb_size.currentData() or LabelSize.MEDIUM,
-            custom_mm=(
-                (self.spin_width.value(), self.spin_height.value())
-                if self.cmb_size.currentData() is None
-                else None
-            ),
+            custom_mm=self._label_mm() if self.cmb_size.currentData() is None else None,
             theme=self.cmb_theme.currentData(),
             dpi=dpi,
             show_date=self.chk_date.isChecked(),
@@ -520,6 +520,16 @@ class LabelDialog(QDialog):
             producer=self.txt_producer.toPlainText().strip() if for_sale else "",
             storage_hint=self.txt_storage.text().strip() if for_sale else "",
         )
+
+    def _label_mm(self) -> tuple[float, float]:
+        """Breite und Höhe des gewählten Formats in Millimetern."""
+        size = self.cmb_size.currentData()
+        if isinstance(size, LabelSize):
+            return size.millimeters
+        return (self.spin_width.value(), self.spin_height.value())
+
+    def _update_print_summary(self) -> None:
+        self.print_card.update_summary(self._label_mm())
 
     def _best_before(self) -> date | None:
         """Mindesthaltbarkeitsdatum, sofern angehakt."""
@@ -555,6 +565,7 @@ class LabelDialog(QDialog):
                 )
             )
             self._update_dimensions()
+            self._update_print_summary()
         finally:
             self._rendering = False
 
@@ -703,34 +714,44 @@ class LabelDialog(QDialog):
             QMessageBox.information(self, "Gespeichert", f"Etikett gespeichert:\n{path}")
 
     def _paint_to_printer(self, printer: QPrinter) -> None:
-        """Zeichnet das Etikett in Originalgröße mitten auf die Seite.
+        """Zeichnet die Etiketten in Originalgröße, wie die Druckart es vorsieht.
 
-        Früher wurde es auf die ganze Seite gestreckt - ein Etikett von
-        70 × 100 mm kam auf A4 rund 200 mm breit heraus. Jetzt wird in
-        Millimetern ab der Papierkante gerechnet und erst zuletzt mit der
-        Auflösung des Druckers in Pixel umgesetzt.
+        Früher wurde das Etikett auf die ganze Seite gestreckt - 70 × 100 mm
+        kamen auf A4 rund 200 mm breit heraus. Jetzt wird in Millimetern ab
+        der Papierkante gerechnet und erst zuletzt mit der Auflösung des
+        Druckers in Pixel umgesetzt.
         """
         options = self._options(dpi=self.cmb_dpi.currentData())
         image = pil_to_qimage(render_label(self._analysis.per_100g, options, fonts=self._fonts))
-        # Ursprung an der Papierkante statt am bedruckbaren Bereich: Sonst
-        # zählte der Druckerrand doppelt, einmal von Qt und einmal hier.
-        printer.setFullPage(True)
-        paper = printer.pageLayout().fullRect(QPageLayout.Unit.Millimeter)
-        placement = centered(options.millimeters, (paper.width(), paper.height()))
-        painter = QPainter()
-        if not painter.begin(printer):  # pragma: no cover - Druckerfehler
+        placements = self.print_card.placements(options.millimeters, paper_mm(printer))
+        if not paint_labels(printer, image, placements):  # pragma: no cover - Druckerfehler
             QMessageBox.critical(self, "Drucken", "Der Drucker konnte nicht geöffnet werden.")
-            return
-        try:
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            painter.drawImage(QRectF(*placement.to_pixels(printer.resolution())), image)
-        finally:
-            painter.end()
+
+    def _new_printer(self) -> QPrinter:
+        """Ein Drucker, dessen Seite schon zur Druckart passt."""
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        prepare_printer(
+            printer, self.print_card.mode(), self._label_mm(), rotated=self.print_card.rotated()
+        )
+        return printer
+
+    def _print_layout_ok(self) -> bool:
+        """Verweigert den Druck, solange das Raster nicht aufs Blatt passt."""
+        problems = self.print_card.problems(self._label_mm())
+        if not problems:
+            return True
+        QMessageBox.warning(
+            self,
+            "Raster passt nicht",
+            "So passen die Etiketten nicht aufs Blatt:\n\n"
+            + "\n".join(f"• {problem}" for problem in problems),
+        )
+        return False
 
     def _on_print(self) -> None:
-        if self._output_blocked() or not self._sale_confirmed():
+        if self._output_blocked() or not self._print_layout_ok() or not self._sale_confirmed():
             return
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer = self._new_printer()
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Etikett drucken")
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -740,7 +761,9 @@ class LabelDialog(QDialog):
             self._label_was_created = True
 
     def _on_print_preview(self) -> None:
-        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        if not self._print_layout_ok():
+            return
+        printer = self._new_printer()
         preview = QPrintPreviewDialog(printer, self)
         preview.setWindowTitle("Druckvorschau")
         preview.paintRequested.connect(self._paint_to_printer)

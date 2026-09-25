@@ -19,8 +19,12 @@ Nährwerte je 100 g, Bäckerprozent, Teigausbeute, Hydration und Kosten stehen
 sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
 
 **Etikettieren.** Ein Nährwert-Etikett in vier Formaten oder einem eigenen
-(30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog –
-ohne Umweg über eine Datei, gedruckt in Originalgröße. Aufbau und Reihenfolge folgen Anhang XV der
+(30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern,
+„Speichern unter“ oder direkt in den Druckdialog – ohne Umweg über eine Datei
+und immer in Originalgröße: einzeln mitten aufs Blatt, am Etikettendrucker
+(auf Wunsch um 90° gedreht), auf Etikettenbögen nach den Maßen der Verpackung
+– auch ab dem ersten freien Etikett eines angebrochenen Bogens – oder zu
+mehreren auf A4 zum Ausschneiden. Aufbau und Reihenfolge folgen Anhang XV der
 VO (EU) Nr. 1169/2011. Backdatum und Mindesthaltbarkeit sind frei wählbar: Das
 Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
 bleibt erhalten. Das Zutatenverzeichnis folgt Artikel 18: absteigend nach

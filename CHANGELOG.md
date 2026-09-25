@@ -114,6 +114,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Text um, einschließlich der Abschnittsüberschriften und Tabellenwerte, die
   bisher fest in einer Zeile standen. Bilder über 40 Millionen Pixel (etwa
   A4 in 1200 dpi) lehnt das Etikett ab, statt den Speicher zu füllen.
+- **Druckarten für Etikettendrucker, Etikettenbögen und A4.** Die Karte
+  „Druck“ im Etikettdialog bietet: einzeln mitten aufs Blatt; am
+  Etikettendrucker je Etikett eine Seite in Etikettgröße, auf Wunsch um 90°
+  gedreht für Drucker, die quer einziehen; Etikettenbögen nach den Maßen auf
+  der Verpackung (Spalten, Reihen, Rand, Abstand), ab dem ersten freien
+  Etikett eines angebrochenen Bogens; mehrere auf A4 zum Ausschneiden - so
+  viele, wie mit 10 mm Rand und 5 mm Schnittabstand passen. Dazu die Anzahl
+  und eine Zeile, was entsteht („5 Etiketten auf 2 Bögen“). Ein Raster, das
+  nicht aufs Blatt passt, wird angezeigt und verhindert Druck und
+  Druckvorschau. Jedes Etikett behält seine Originalgröße.
 
 ### Geändert
 
