@@ -69,6 +69,12 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
   mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
   beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
+- **Ein Rezept ließ sich nicht in anderer Schreibweise umbenennen.** Namen
+  gelten ohne Rücksicht auf Groß- und Kleinschreibung als gleich; wer
+  „roggenbrot“ in „Roggenbrot“ ändern wollte, bekam „Es gibt bereits ein
+  Rezept namens …“ - gemeint war das Rezept selbst. Außerdem übernimmt der
+  Rechner jetzt den neuen Namen, wenn das Rezept dort geladen ist; das
+  nächste Speichern legte sonst ein Duplikat unter dem alten Namen an.
 - **Ungespeicherte Arbeit im Rechner ging ohne Rückfrage verloren.** „Neu /
   leeren“, das Laden eines anderen Rezepts und das Beenden verwarfen den
   Rechner ohne ein Wort. Jetzt fragt das Programm „Speichern, Verwerfen oder

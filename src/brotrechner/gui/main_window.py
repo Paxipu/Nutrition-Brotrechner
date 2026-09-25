@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 
 from brotrechner import __version__, paths
 from brotrechner.core.analysis import RecipeAnalysis
-from brotrechner.core.models import Ingredient, Recipe
+from brotrechner.core.models import Ingredient, Recipe, normalize_key_part
 from brotrechner.core.validation import Severity, validate_database
 from brotrechner.data import portable
 from brotrechner.data.repository import (
@@ -660,17 +660,36 @@ class MainWindow(QMainWindow):
         new_name = new_name.strip()
         if not accepted or not new_name or new_name == recipe.name:
             return
-        if new_name in self._recipes:
+        # Namen gelten ohne Rücksicht auf Groß- und Kleinschreibung als gleich.
+        # "roggenbrot" in "Roggenbrot" umzubenennen, stieß deshalb früher auf
+        # das Rezept selbst und wurde als "Name vergeben" abgelehnt.
+        if self._recipes.get(new_name) not in (None, recipe):
             QMessageBox.warning(
                 self, "Name vergeben", f"Es gibt bereits ein Rezept namens „{new_name}“."
             )
             return
-        self._recipes.remove(recipe.name)
+        old_name = recipe.name
+        self._recipes.remove(old_name)
         recipe.name = new_name
         self._recipes.add(recipe)
         if self._save_recipes():
+            self._follow_rename(old_name, new_name)
             self._refresh_all()
             self._flash(f"Umbenannt in „{new_name}“")
+
+    def _follow_rename(self, old_name: str, new_name: str) -> None:
+        """Übernimmt einen neuen Rezeptnamen in den Rechner, falls es dort geladen ist.
+
+        Sonst legte das nächste Speichern ein Duplikat unter dem alten Namen an.
+        Ob der Rechner danach als gespeichert gilt, ändert der Name allein nicht.
+        """
+        page = self.page_calculator
+        if normalize_key_part(page.txt_name.text()) != normalize_key_part(old_name):
+            return
+        unchanged = not page.has_unsaved_changes
+        page.txt_name.setText(new_name)
+        if unchanged:
+            page.mark_saved()
 
     def _on_recipe_notes(self, name: str) -> None:
         """Notizen eines gespeicherten Rezepts nachträglich bearbeiten.
