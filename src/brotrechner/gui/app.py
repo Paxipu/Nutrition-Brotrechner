@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import traceback
 from importlib import resources
 from pathlib import Path
 
@@ -11,7 +12,9 @@ from PySide6.QtCore import QLocale
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from brotrechner import __version__
+from brotrechner import __version__, paths
+from brotrechner.gui.errors import install_exception_hook, show_error
+from brotrechner.logfile import configure_logging
 
 __all__ = ["application_icon", "create_app", "icon_path", "run"]
 
@@ -64,11 +67,41 @@ def create_app(argv: list[str] | None = None) -> QApplication:
     return app
 
 
-def run(argv: list[str] | None = None, *, data_dir: Path | None = None) -> int:
-    """Startet die Oberfläche und gibt den Exit-Code zurück."""
+def run(
+    argv: list[str] | None = None, *, data_dir: Path | None = None, verbose: bool = False
+) -> int:
+    """Startet die Oberfläche und gibt den Exit-Code zurück.
+
+    Vorher wird das Protokoll eingerichtet und jede unerwartete Ausnahme auf
+    eine Meldung umgeleitet (:mod:`brotrechner.gui.errors`). Scheitert schon
+    der Aufbau des Hauptfensters - etwa an einer beschädigten Einstellung -,
+    erscheint eine Meldung statt eines Fensters, das sich wortlos schließt.
+    """
     from brotrechner.gui.main_window import MainWindow  # noqa: PLC0415 - Qt erst nach QApplication
 
+    log_file = configure_logging(_data_dir_or_none(data_dir), verbose=verbose)
     app = create_app(argv)
-    window = MainWindow(data_dir=data_dir)
+    install_exception_hook(log_file)
+    log.info("Brotrechner %s startet", __version__)
+    try:
+        window = MainWindow(data_dir=data_dir)
+    except Exception as exc:
+        log.exception("Start fehlgeschlagen")
+        show_error(
+            "Der Brotrechner konnte nicht starten",
+            f"{type(exc).__name__}: {exc}",
+            details=traceback.format_exc(),
+            log_file=log_file,
+        )
+        return 1
     window.show()
     return app.exec()
+
+
+def _data_dir_or_none(data_dir: Path | None) -> Path | None:
+    """Das Datenverzeichnis - oder ``None``, wenn es sich nicht anlegen lässt."""
+    try:
+        return data_dir or paths.data_dir()
+    except OSError as exc:
+        log.warning("Datenverzeichnis nicht verfügbar, Protokoll nur auf der Konsole: %s", exc)
+        return None

@@ -95,7 +95,19 @@ def main() -> int:
         )
         return 1
 
-    return run()
+    # Die Oberfläche fängt ihre Fehler selbst ab und zeigt sie an. Was davor
+    # oder danach scheitert - etwa schon das Anlegen des Fensters durch Qt -,
+    # soll trotzdem nicht in einem Programm enden, das sich wortlos schließt.
+    try:
+        return run()
+    except Exception as exc:
+        _report(
+            "Der Brotrechner wurde unerwartet beendet",
+            f"{type(exc).__name__}: {exc}\n\n"
+            "Einzelheiten stehen - sofern sie sich schreiben ließen - in der Datei "
+            "brotrechner.log im Datenverzeichnis.",
+        )
+        return 1
 
 
 if __name__ == "__main__":

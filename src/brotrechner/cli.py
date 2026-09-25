@@ -78,18 +78,20 @@ def main(argv: list[str] | None = None) -> int:
         Formatfehlern.
     """
     args = _build_parser().parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
-
     data_dir = _resolve_data_dir(args.data_dir)
     command = args.command or "gui"
 
     if command == "gui":
         from brotrechner.gui.app import run  # noqa: PLC0415 - Qt nur bei Bedarf laden
 
-        return run(data_dir=data_dir)
+        # Die Oberfläche richtet ihr Protokoll selbst ein - mit Datei, weil es
+        # beim Start per Doppelklick keine Konsole gibt.
+        return run(data_dir=data_dir, verbose=args.verbose)
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
 
     try:
         ensure_user_database(

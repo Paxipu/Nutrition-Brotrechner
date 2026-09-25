@@ -155,8 +155,15 @@ Projektverzeichnis schaltet den *portablen Modus* ein – praktisch für den
 Betrieb vom USB-Stick.
 
 Vor jedem Überschreiben legt das Programm eine Sicherung in `<Daten>/backups`
-an und hält die zehn jüngsten Stände. Geschrieben wird atomar: Ein Absturz
-mitten im Speichern kann keine halbe JSON-Datei hinterlassen.
+an und hält die zehn jüngsten Stände – aber nur, wenn sich der Inhalt wirklich
+ändert; „Datei → Sicherung anlegen“ sichert den jetzigen Stand. Geschrieben
+wird atomar: Ein Absturz mitten im Speichern kann keine halbe JSON-Datei
+hinterlassen. Ist eine Datei beim Start unlesbar, wird sie unverändert als
+`<Name>.defekt-<Zeitpunkt>.json` beiseitegelegt statt überschrieben.
+
+Warnungen und Fehler stehen in `<Daten>/brotrechner.log`, der Pfad auch unter
+„Hilfe → Über“. Ein unerwarteter Fehler erscheint zusätzlich als Meldung –
+beim Start per Doppelklick gibt es sonst keine Konsole, auf der er stünde.
 
 ### Übernahme aus der Vorgängerversion
 

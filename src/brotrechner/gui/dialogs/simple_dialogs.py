@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -32,6 +33,7 @@ from brotrechner.export import report
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card
 from brotrechner.i18n import format_number
+from brotrechner.logfile import log_path
 
 __all__ = ["AboutDialog", "ImportDialog", "NotesDialog", "ScaleDialog", "ValidationDialog"]
 
@@ -457,7 +459,10 @@ class AboutDialog(QDialog):
         facts = Card("Zustand")
         facts.setFixedWidth(_ABOUT_WIDTH)
         facts.add_widget(QLabel(f"{ingredient_count} Zutaten · {recipe_count} Rezepte"))
-        path_label = QLabel(f"Datenverzeichnis:<br><code>{data_dir}</code>")
+        path_label = QLabel(
+            f"Datenverzeichnis:<br><code>{data_dir}</code><br>"
+            f"Protokoll:<br><code>{log_path(Path(data_dir))}</code>"
+        )
         path_label.setWordWrap(True)
         path_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         facts.add_widget(path_label)

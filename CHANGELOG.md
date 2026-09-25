@@ -69,6 +69,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
   mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
   beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
+- **Unerwartete Fehler verschwanden spurlos.** Beim Start per Doppelklick
+  gibt es keine Konsole. Eine Ausnahme in einer Aktion ließ deshalb einfach
+  einen Knopf nicht reagieren, und scheiterte der Aufbau des Hauptfensters -
+  etwa an einer beschädigten Einstellung -, schloss sich das Programm
+  wortlos. Jetzt erscheint eine Meldung mit ausklappbarem Hergang, und alles
+  steht in `brotrechner.log` im Datenverzeichnis (rotierend, höchstens rund
+  1,5 MB). Auch der Doppelklick-Starter fängt Abstürze ab und meldet sie.
 - **Das Etikett wurde auf die ganze Druckseite gestreckt.** Ein Etikett von
   70 × 100 mm kam auf A4 rund 200 mm breit aus dem Drucker. Außerdem zählte
   der Druckerrand doppelt, das Etikett saß um den Rand versetzt. Gedruckt wird
