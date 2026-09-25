@@ -69,6 +69,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   sagt wo und wie man den alten Stand zurückholt. Die Zutaten beginnen dann
   mit der Startdatenbank, die Rezepte leer. Lässt sich die Datei nicht
   beiseitelegen, schreibt das Programm in dieser Sitzung nicht hinein.
+- **Rezeptnotizen fehlten im PDF-Bericht.** Der Bericht kann Notizen
+  drucken, das Hauptfenster reichte sie aber nie weiter. Jetzt stehen die
+  Notizen eines gespeicherten Rezepts in seinem Bericht.
 - **Ein Rezept ließ sich nicht in anderer Schreibweise umbenennen.** Namen
   gelten ohne Rücksicht auf Groß- und Kleinschreibung als gleich; wer
   „roggenbrot“ in „Roggenbrot“ ändern wollte, bekam „Es gibt bereits ein

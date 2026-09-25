@@ -991,8 +991,13 @@ class MainWindow(QMainWindow):
         path = Path(target)
         if path.suffix.lower() != ".pdf":
             path = path.with_suffix(".pdf")
+        # Erfahrungen zum Rezept gehören in seinen Bericht - bisher kamen die
+        # Notizen dort nie an, obwohl der Bericht sie drucken kann.
+        stored = self._recipes.get(name)
         try:
-            report.write_report(path, self._analysis, recipe_name=name)
+            report.write_report(
+                path, self._analysis, recipe_name=name, notes=stored.notes if stored else ""
+            )
         except report.ReportError as exc:
             QMessageBox.critical(self, "Bericht fehlgeschlagen", str(exc))
             return
