@@ -6,12 +6,16 @@ import os
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import HealthCheck, settings
 
 from brotrechner.core.models import Category, Ingredient, Recipe, RecipeItem
 from brotrechner.core.nutrients import Nutrients
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QWidget
 
 # Dateisystemzugriffe machen einzelne Hypothesis-Beispiele langsam; die
 # Voreinstellung würde deshalb grundlos scheitern.
@@ -144,6 +148,23 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 _DIALOG_PATIENCE_MS = 1500
 
 
+def _describe(widget: QWidget) -> str:
+    """Wie ein offen gebliebener Dialog in der Fehlermeldung heißt.
+
+    Ein Meldungsfenster nach der ersten Zeile seines Textes: Auf macOS trägt es
+    keinen Titel, Qt verwirft ihn dort schon beim Setzen. Andere Dialoge nach
+    ihrem Titel und, wo auch der fehlt, nach ihrer Klasse.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    if isinstance(widget, QMessageBox):
+        lines = (line.strip() for line in widget.text().splitlines())
+        first = next((line for line in lines if line), "")
+        if first:
+            return first
+    return widget.windowTitle() or type(widget).__name__
+
+
 @dataclass
 class DialogGuard:
     """Schließt modale Dialoge, die ein Test offen gelassen hat, und merkt sie sich."""
@@ -154,13 +175,13 @@ class DialogGuard:
         """Schließt alle offenen modalen Dialoge.
 
         Returns:
-            Ihre Fenstertitel - oder die Klassennamen, wo der Titel fehlt.
+            Wie sie heißen, siehe :func:`_describe`.
         """
         from PySide6.QtWidgets import QApplication, QDialog
 
         closed: list[str] = []
         while (widget := QApplication.activeModalWidget()) is not None:
-            closed.append(widget.windowTitle() or type(widget).__name__)
+            closed.append(_describe(widget))
             if isinstance(widget, QDialog):
                 widget.reject()
             else:

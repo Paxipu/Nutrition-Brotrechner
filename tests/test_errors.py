@@ -91,6 +91,15 @@ class TestLogFile:
         assert "laut" in text
 
 
+def _box_title(title: str) -> str:
+    """Der Titel, den ein Meldungsfenster auf dieser Plattform trägt.
+
+    Auf macOS keiner: Qt verwirft ihn dort gemäß den Apple-Richtlinien schon in
+    ``QMessageBox.setWindowTitle``. Was passiert ist, muss deshalb im Text stehen.
+    """
+    return "" if sys.platform == "darwin" else title
+
+
 @pytest.fixture
 def shown(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
     """Fängt jede Meldung ab: (Titel, Text, Einzelheiten)."""
@@ -137,7 +146,8 @@ class TestExceptionHook:
         _raise(ValueError("Teig zu nass"))
         _flush()
         ((title, text, details),) = shown
-        assert title == "Unerwarteter Fehler"
+        assert title == _box_title("Unerwarteter Fehler")
+        assert "wegen eines Programmfehlers abgebrochen" in text
         assert "ValueError: Teig zu nass" in text
         assert str(log_file) in text
         assert "Traceback" in details
@@ -240,7 +250,7 @@ class TestStart:
         monkeypatch.setattr(main_window, "MainWindow", broken)
         assert app.run([], data_dir=tmp_path) == 1
         _flush()
-        assert shown[0][0] == "Der Brotrechner konnte nicht starten"
+        assert shown[0][0] == _box_title("Der Brotrechner konnte nicht starten")
         assert "blau" in shown[0][1]
         assert "blau" in (tmp_path / LOG_FILE).read_text(encoding="utf-8")
 

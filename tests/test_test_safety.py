@@ -17,9 +17,14 @@ pytestmark = pytest.mark.gui
 
 
 def test_an_open_dialog_is_closed_and_named(qapp: Any, dialog_guard: Any) -> None:
+    """Ein Meldungsfenster heißt nach seinem Text.
+
+    Den Titel verwirft Qt auf macOS schon beim Setzen (Apple-Richtlinien) -
+    genannt wurde dort bisher nur "QMessageBox".
+    """
     from PySide6.QtWidgets import QMessageBox
 
-    box = QMessageBox(QMessageBox.Icon.Question, "Wirklich löschen?", "Ganz sicher?")
+    box = QMessageBox(QMessageBox.Icon.Question, "Löschen", "Wirklich löschen?\n\nGanz sicher?")
     box.setModal(True)
     box.show()
     qapp.processEvents()
@@ -29,6 +34,21 @@ def test_an_open_dialog_is_closed_and_named(qapp: Any, dialog_guard: Any) -> Non
     dialog_guard.left_open.clear()  # Hier gewollt - der Test soll nicht scheitern.
 
 
+def test_other_dialogs_are_named_by_their_title(qapp: Any, dialog_guard: Any) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    dialog = QDialog()
+    dialog.setWindowTitle("Etikett drucken")
+    dialog.setModal(True)
+    dialog.show()
+    untitled = QDialog()
+    untitled.setModal(True)
+    untitled.show()
+    qapp.processEvents()
+    assert dialog_guard.close_open_dialogs() == ["QDialog", "Etikett drucken"]
+    dialog_guard.left_open.clear()
+
+
 def test_a_blocking_dialog_does_not_hang_the_run(qapp: Any, dialog_guard: Any) -> None:
     """Ohne Wächter kehrte ``exec()`` nie zurück."""
     del qapp
@@ -36,7 +56,7 @@ def test_a_blocking_dialog_does_not_hang_the_run(qapp: Any, dialog_guard: Any) -
 
     box = QMessageBox(QMessageBox.Icon.Information, "Vergessen", "Niemand antwortet")
     box.exec()
-    assert dialog_guard.left_open == ["Vergessen"]
+    assert dialog_guard.left_open == ["Niemand antwortet"]
     dialog_guard.left_open.clear()
 
 
