@@ -11,7 +11,7 @@ einen stabilen, normalisierten Schlüssel ab.
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Final
@@ -22,12 +22,14 @@ from brotrechner.core.portions import Portion
 
 __all__ = [
     "CATEGORY_LABELS",
+    "STAGE_LABELS",
     "Category",
     "Ingredient",
     "PriceEntry",
     "Recipe",
     "RecipeItem",
     "Source",
+    "Stage",
     "as_aware",
     "normalize_key_part",
 ]
@@ -84,6 +86,50 @@ CATEGORY_LABELS: Final[dict[Category, str]] = {
     Category.DAIRY: "Milchprodukte",
     Category.SPICES: "Gewürze",
     Category.OTHER: "Sonstiges",
+}
+
+
+class Stage(Enum):
+    """Stufe eines Rezepts, in der eine Zutat verarbeitet wird.
+
+    Die Reihenfolge der Mitglieder ist die übliche beim Backen: Vorstufen wie
+    Sauerteig oder Brühstück werden vorher angesetzt, zuletzt der Hauptteig.
+    Der Wert ist der stabile Schlüssel in der JSON-Datei; aus demselben Grund
+    wie bei :class:`Category` keine Ableitung von ``str``.
+    """
+
+    SOURDOUGH = "sourdough"
+    PREFERMENT = "preferment"
+    SCALD = "scald"
+    SOAKER = "soaker"
+    COOKED = "cooked"
+    MAIN = "main"
+
+    @classmethod
+    def parse(cls, value: object) -> Stage:
+        """Liest eine Stufe aus Schlüssel oder Bezeichnung; Unbekanntes ist Hauptteig."""
+        if isinstance(value, cls):
+            return value
+        text = str(value or "").strip().casefold()
+        for member in cls:
+            if text in (member.value, member.label.casefold()):
+                return member
+        return cls.MAIN
+
+    @property
+    def label(self) -> str:
+        """Deutsche Bezeichnung."""
+        return STAGE_LABELS[self]
+
+
+#: Deutsche Bezeichnungen der Stufen.
+STAGE_LABELS: Final[dict[Stage, str]] = {
+    Stage.SOURDOUGH: "Sauerteig",
+    Stage.PREFERMENT: "Vorteig",
+    Stage.SCALD: "Brühstück",
+    Stage.SOAKER: "Quellstück",
+    Stage.COOKED: "Kochstück",
+    Stage.MAIN: "Hauptteig",
 }
 
 
@@ -384,6 +430,9 @@ class RecipeItem:
     name: str
     manufacturer: str
     amount_g: float
+    #: Stufe, in der die Zutat verarbeitet wird; Rezepte älterer Versionen
+    #: kennen nur den Hauptteig.
+    stage: Stage = Stage.MAIN
 
     @property
     def display_name(self) -> str:
@@ -391,7 +440,7 @@ class RecipeItem:
 
     def scaled(self, factor: float) -> RecipeItem:
         """Kopie mit skalierter Menge."""
-        return RecipeItem(self.ingredient_key, self.name, self.manufacturer, self.amount_g * factor)
+        return replace(self, amount_g=self.amount_g * factor)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -399,6 +448,7 @@ class RecipeItem:
             "name": self.name,
             "manufacturer": self.manufacturer,
             "amount_g": self.amount_g,
+            "stage": self.stage.value,
         }
 
     @classmethod
@@ -413,6 +463,7 @@ class RecipeItem:
             name=name,
             manufacturer=manufacturer,
             amount_g=_as_float(data.get("amount_g")),
+            stage=Stage.parse(data.get("stage")),
         )
 
 

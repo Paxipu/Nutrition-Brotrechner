@@ -35,7 +35,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from brotrechner.core.models import Ingredient, RecipeItem
+from brotrechner.core.models import Ingredient, RecipeItem, Stage
 from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients
 from brotrechner.core.portions import Portion
 from brotrechner.core.rounding import as_declarable
@@ -47,6 +47,7 @@ __all__ = [
     "IngredientLine",
     "RecipeAnalysis",
     "ResolvedItem",
+    "StageSummary",
     "added_water_percent",
     "analyze",
     "resolve_items",
@@ -88,6 +89,7 @@ class ResolvedItem:
 
     ingredient: Ingredient
     amount_g: float
+    stage: Stage = Stage.MAIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,10 +107,38 @@ class IngredientLine:
     """Materialkosten dieser Zeile in Euro."""
     water_g: float
     """Im Zutatenanteil enthaltenes Wasser."""
+    stage: Stage = Stage.MAIN
 
     @property
     def has_price(self) -> bool:
         return self.ingredient.has_price
+
+
+@dataclass(frozen=True, slots=True)
+class StageSummary:
+    """Kennzahlen einer Stufe - aus dem, was für sie abgewogen wird.
+
+    Anders als die übrigen Werte der Auswertung sind sie nicht auf das
+    gemessene Rohteiggewicht umgerechnet: Sie sagen, was in die Schüssel der
+    Stufe kommt.
+    """
+
+    stage: Stage
+    weight_g: float
+    """Summe der Zutaten der Stufe."""
+    flour_g: float
+    """Mehl der Stufe, auch das in einem Anstellgut."""
+    water_g: float
+    """Schüttwasser der Stufe."""
+    flour_share_percent: float
+    """Anteil am Mehl des ganzen Rezepts - beim Sauerteig die versäuerte Mehlmenge."""
+
+    @property
+    def dough_yield(self) -> float:
+        """Teigausbeute der Stufe; 0 ohne Mehl."""
+        if self.flour_g <= 0:
+            return 0.0
+        return (self.flour_g + self.water_g) / self.flour_g * 100.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +183,15 @@ class RecipeAnalysis:
     # Portion
     portion: Portion | None = None
     """Portion für Angaben je Scheibe oder Stück; ``None`` heißt nur je 100 g."""
+
+    # Stufen
+    stages: tuple[StageSummary, ...] = ()
+    """Kennzahlen je Stufe in Backreihenfolge, nur Stufen mit Zutaten."""
+
+    @property
+    def has_stages(self) -> bool:
+        """Hat das Rezept Stufen außer dem Hauptteig?"""
+        return any(summary.stage is not Stage.MAIN for summary in self.stages)
 
     @property
     def is_empty(self) -> bool:
@@ -240,7 +279,7 @@ def resolve_items(
         if ingredient is None:
             missing.append(item)
             continue
-        resolved.append(ResolvedItem(ingredient, item.amount_g))
+        resolved.append(ResolvedItem(ingredient, item.amount_g, item.stage))
     return resolved, missing
 
 
@@ -307,6 +346,7 @@ def analyze(
                 baker_percent=amount / flour_mass * 100.0 if flour_mass > 0 else 0.0,
                 cost=cost,
                 water_g=amount * item.ingredient.nutrients.water / 100.0,
+                stage=item.stage,
             )
         )
 
@@ -343,7 +383,31 @@ def analyze(
         energy_kwh=energy_kwh,
         energy_price=energy_price,
         portion=portion,
+        stages=_stage_summaries(items),
     )
+
+
+def _stage_summaries(items: list[ResolvedItem]) -> tuple[StageSummary, ...]:
+    """Gewicht, Mehl, Schüttwasser und Mehlanteil je Stufe, in Backreihenfolge."""
+    total_flour = sum(i.amount_g * i.ingredient.flour_fraction for i in items)
+    summaries: list[StageSummary] = []
+    for stage in Stage:
+        members = [item for item in items if item.stage is stage]
+        if not members:
+            continue
+        flour = sum(i.amount_g * i.ingredient.flour_fraction for i in members)
+        summaries.append(
+            StageSummary(
+                stage=stage,
+                weight_g=sum(i.amount_g for i in members),
+                flour_g=flour,
+                water_g=sum(
+                    i.amount_g * added_water_percent(i.ingredient) / 100.0 for i in members
+                ),
+                flour_share_percent=flour / total_flour * 100.0 if total_flour > 0 else 0.0,
+            )
+        )
+    return tuple(summaries)
 
 
 def _ranges_per_100g(per_100g: Nutrients, *, baked_weight_g: float) -> dict[str, ValueRange]:

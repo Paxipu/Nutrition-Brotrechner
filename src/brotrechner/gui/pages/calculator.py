@@ -23,6 +23,7 @@ Jetzt gilt:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from html import escape
 
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -423,7 +424,7 @@ class CalculatorPage(QWidget):
         refreshed: list[ResolvedItem] = []
         for item in self._items_model.items:
             current = self._ingredients.get(item.ingredient.key, item.ingredient)
-            refreshed.append(ResolvedItem(current, item.amount_g))
+            refreshed.append(replace(item, ingredient=current))
         if refreshed:
             self._items_model.set_items(refreshed)
         self._schedule()
@@ -453,7 +454,7 @@ class CalculatorPage(QWidget):
             if ingredient is None:
                 missing.append(item)
                 continue
-            resolved.append(ResolvedItem(ingredient, item.amount_g))
+            resolved.append(ResolvedItem(ingredient, item.amount_g, item.stage))
 
         self._items_model.set_items(resolved)
         self._recalculate()
@@ -470,6 +471,7 @@ class CalculatorPage(QWidget):
                     name=item.ingredient.name,
                     manufacturer=item.ingredient.manufacturer,
                     amount_g=item.amount_g,
+                    stage=item.stage,
                 )
                 for item in self._items_model.items
             ],
@@ -512,7 +514,9 @@ class CalculatorPage(QWidget):
         """Fingerabdruck dessen, was ein Speichern festhielte."""
         return (
             self.txt_name.text().strip(),
-            tuple((item.ingredient.key, item.amount_g) for item in self._items_model.items),
+            tuple(
+                (item.ingredient.key, item.amount_g, item.stage) for item in self._items_model.items
+            ),
             self.spin_baked.value(),
             self.spin_dough.value(),
             self.spin_kwh.value(),

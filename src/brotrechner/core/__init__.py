@@ -21,6 +21,7 @@ from brotrechner.core.models import (
     Recipe,
     RecipeItem,
     Source,
+    Stage,
 )
 from brotrechner.core.nutrients import Nutrients, energy_from_macros
 from brotrechner.core.reference import AmpelLevel, reference_intake_percent, traffic_light
@@ -42,6 +43,7 @@ __all__ = [
     "ResolvedItem",
     "Severity",
     "Source",
+    "Stage",
     "ValueRange",
     "analyze",
     "energy_from_macros",

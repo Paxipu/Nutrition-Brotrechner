@@ -170,7 +170,9 @@ def build_ingredient_list(
     for line in lines:
         ingredient = line.ingredient
         if ingredient.allergens is None:
-            unknown.append(ingredient.display_name)
+            # Dieselbe Zutat kann in mehreren Stufen stehen - genannt wird sie einmal.
+            if ingredient.display_name not in unknown:
+                unknown.append(ingredient.display_name)
         else:
             allergens |= ingredient.allergens
 

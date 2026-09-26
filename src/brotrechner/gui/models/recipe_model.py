@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, Final
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
 
 from brotrechner.core.analysis import RecipeAnalysis, ResolvedItem
-from brotrechner.core.models import Ingredient, Recipe
+from brotrechner.core.models import Ingredient, Recipe, Stage
 from brotrechner.i18n import format_number
 
 __all__ = ["RECIPE_COLUMNS", "RecipeItemsModel", "RecipeListModel"]
@@ -55,24 +56,33 @@ class RecipeItemsModel(QAbstractTableModel):
         self._items = list(items)
         self.endResetModel()
 
-    def add_item(self, ingredient: Ingredient, amount_g: float) -> None:
+    def add_item(self, ingredient: Ingredient, amount_g: float, stage: Stage = Stage.MAIN) -> None:
         """Fügt eine Zutat an oder erhöht die Menge, wenn sie schon enthalten ist.
 
         Zweimal dieselbe Zutat einzutragen war in der Vorversion möglich und
         führte zu zwei Zeilen, die sich beim Bäckerprozent gegenseitig
-        verwässerten. Das Zusammenfassen ist das erwartbarere Verhalten.
+        verwässerten. Das Zusammenfassen ist das erwartbarere Verhalten -
+        innerhalb einer Stufe: Mehl im Sauerteig und Mehl im Hauptteig sind
+        zwei Zeilen. Eine neue Zeile steht am Ende ihrer Stufe, Vorstufen vor
+        dem Hauptteig.
         """
         for row, item in enumerate(self._items):
-            if item.ingredient.key == ingredient.key:
-                self._items[row] = ResolvedItem(ingredient, item.amount_g + amount_g)
-                index = self.index(row, _COL_AMOUNT)
+            if item.ingredient.key == ingredient.key and item.stage is stage:
+                self._items[row] = ResolvedItem(ingredient, item.amount_g + amount_g, stage)
                 self.dataChanged.emit(self.index(row, 0), self.index(row, len(RECIPE_COLUMNS) - 1))
-                del index
                 return
 
-        position = len(self._items)
+        order = list(Stage)
+        position = next(
+            (
+                row
+                for row, item in enumerate(self._items)
+                if order.index(item.stage) > order.index(stage)
+            ),
+            len(self._items),
+        )
         self.beginInsertRows(QModelIndex(), position, position)
-        self._items.append(ResolvedItem(ingredient, amount_g))
+        self._items.insert(position, ResolvedItem(ingredient, amount_g, stage))
         self.endInsertRows()
 
     def remove_rows(self, rows: Sequence[int]) -> None:
@@ -176,7 +186,7 @@ class RecipeItemsModel(QAbstractTableModel):
             return False
 
         row = index.row()
-        self._items[row] = ResolvedItem(self._items[row].ingredient, amount)
+        self._items[row] = replace(self._items[row], amount_g=amount)
         self.dataChanged.emit(index, self.index(row, len(RECIPE_COLUMNS) - 1))
         return True
 
