@@ -6,10 +6,13 @@ geprüft wird nur, was ``main`` daraus macht.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,3 +69,18 @@ def test_a_failing_step_fails_the_run() -> None:
     output = result.stdout.decode("utf-8")
     assert "ERGEBNIS: 1 Schritt(e) fehlgeschlagen: Übung" in output
     assert "So geht es weiter." in output
+
+
+def test_the_audit_covers_the_build_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PyInstaller steckt mit seinem Startprogramm in jedem ausgelieferten Windows-Paket."""
+    script = ROOT / "tools" / "quality_gate.py"
+    spec = importlib.util.spec_from_file_location("quality_gate", script)
+    assert spec is not None
+    assert spec.loader is not None
+    gate = importlib.util.module_from_spec(spec)
+    # Der dataclass-Dekorator schlägt das Modul in sys.modules nach.
+    monkeypatch.setitem(sys.modules, spec.name, gate)
+    spec.loader.exec_module(gate)
+    steps = gate.build_steps(fast=True, audit=True)
+    (audit,) = [step for step in steps if "pip_audit" in step.command]
+    assert str(ROOT / "packaging" / "requirements.txt") in audit.command

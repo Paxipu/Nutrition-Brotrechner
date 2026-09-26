@@ -104,10 +104,21 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
         # Paketbestand des Systems bewertet - dessen Befunde haben mit diesem
         # Projekt nichts zu tun und würden das Tor dauerhaft rot färben.
         steps.append(
+            # Auch die Bauwerkzeuge: PyInstaller steckt mit seinem
+            # Startprogramm in jedem ausgelieferten Windows-Paket.
             Step(
                 "Abhängigkeiten",
-                [*python, "pip_audit", "--progress-spinner", "off", "-r", _requirements_file()],
-                "Betroffene Untergrenze in pyproject.toml anheben.",
+                [
+                    *python,
+                    "pip_audit",
+                    "--progress-spinner",
+                    "off",
+                    "-r",
+                    _requirements_file(),
+                    "-r",
+                    str(ROOT / "packaging" / "requirements.txt"),
+                ],
+                "Betroffene Untergrenze in pyproject.toml oder packaging/requirements.txt anheben.",
             )
         )
     return steps
