@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -55,6 +56,19 @@ MAX_BACKUPS: Final = 10
 #: Schlüssel, die sich bei jedem Speichern ändern und deshalb nicht als
 #: Änderung des Inhalts zählen.
 _VOLATILE_KEYS: Final = ("updated_at",)
+
+#: Tiefste zulässige Verschachtelung von Listen und Objekten in einer
+#: JSON-Datei. Die eigenen Dateien kommen mit einer Handvoll Ebenen aus; die
+#: Grenze schützt beim Import fremder Dateien. Wann der JSON-Leser selbst an
+#: seine Rekursionsgrenze stößt, hängt von der Python-Version ab - Python
+#: 3.14 liest 60 000 Ebenen, frühere Versionen brechen nach etwa 1000 ab.
+MAX_JSON_NESTING: Final = 100
+
+#: Eine JSON-Zeichenkette. Das schließende Anführungszeichen ist optional:
+#: So endet jeder Treffer, ohne zurückzugehen, und auch eine kaputte Datei ist
+#: in linearer Zeit durchlaufen. Ihren Syntaxfehler meldet danach der JSON-Leser.
+_JSON_STRING: Final = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"?', re.DOTALL)
+_JSON_BRACKET: Final = re.compile(r"[\[\]{}]")
 
 #: Zutatenfelder, die erst nach Version 5.1 hinzugekommen sind. Fehlen sie in
 #: einem Eintrag, hat ihn ein älteres Programm geschrieben; die Datenschicht
@@ -222,25 +236,38 @@ def read_json(path: Path) -> Any:
 
     Raises:
         RepositoryError: Bei Lese- oder Syntaxfehlern - mit Angabe der Zeile,
-            damit sich eine kaputte Datei von Hand reparieren lässt.
+            damit sich eine kaputte Datei von Hand reparieren lässt - und bei
+            mehr als :data:`MAX_JSON_NESTING` verschachtelten Ebenen.
     """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise RepositoryError(f"{path} konnte nicht gelesen werden: {exc}") from exc
+    if _too_deep(text):
+        raise RepositoryError(
+            f"{path} ist zu tief verschachtelt (mehr als {MAX_JSON_NESTING} Ebenen) "
+            "und wurde nicht eingelesen"
+        )
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise RepositoryError(
             f"{path} ist kein gültiges JSON (Zeile {exc.lineno}, Spalte {exc.colno}): {exc.msg}"
         ) from exc
-    except RecursionError as exc:
-        # Eine Datei mit zehntausenden verschachtelten Klammern bringt den
-        # JSON-Leser an die Rekursionsgrenze. Beim Import fremder Dateien darf
-        # das eine Fehlermeldung geben, aber nicht das Programm beenden.
-        raise RepositoryError(
-            f"{path} ist zu tief verschachtelt und wurde nicht eingelesen"
-        ) from exc
+
+
+def _too_deep(text: str) -> bool:
+    """Ob Listen und Objekte tiefer als :data:`MAX_JSON_NESTING` verschachtelt sind.
+
+    Klammern in Zeichenketten zählen nicht. Die Prüfung endet an der ersten
+    Klammer über der Grenze, auch in einer riesigen Datei.
+    """
+    depth = 0
+    for bracket in _JSON_BRACKET.finditer(_JSON_STRING.sub("", text)):
+        depth += 1 if bracket.group() in "[{" else -1
+        if depth > MAX_JSON_NESTING:
+            return True
+    return False
 
 
 def write_json_atomic(
