@@ -237,6 +237,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **Die CI prüft auch unter Windows und macOS und mit Python 3.14.** Bisher
+  lief sie nur unter Linux, obwohl das Programm meist per Doppelklick unter
+  Windows startet. Linux prüft alle unterstützten Versionen von 3.10 bis
+  3.14, Windows und macOS die älteste und die neueste. Von Hand lässt sich
+  der Lauf jetzt auch für einen Zweig ohne Pull Request starten. Python 3.10
+  bleibt unterstützt, erhält aber ab Oktober 2026 keine Sicherheitskorrekturen
+  mehr.
 - **Die Testabdeckung schließt die Oberfläche ein.** Bisher war das Paket
   `gui` - der größte Teil des Programms - von der Messung ausgenommen. Mit
   neuen Tests für Hauptfenster, Dialoge, Seiten, Tabellenmodelle und

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Von Hand startbar, etwa für einen Zweig ohne Pull Request.
+  workflow_dispatch:
   schedule:
     # Wöchentlich, damit neu bekannt gewordene Schwachstellen in Abhängigkeiten
     # auffallen, auch wenn niemand etwas ändert.
@@ -15,12 +17,25 @@ concurrency:
 
 jobs:
   gates:
-    name: Qualitätstore (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Qualitätstore (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # Linux mit jeder unterstützten Version. Windows - dort startet das
+        # Programm meist per Doppelklick - und macOS mit der ältesten und der
+        # neuesten.
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: windows-latest
+            python-version: "3.10"
+          - os: windows-latest
+            python-version: "3.14"
+          - os: macos-latest
+            python-version: "3.10"
+          - os: macos-latest
+            python-version: "3.14"
 
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +45,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      # Qt braucht auch ohne Bildschirm ein paar Systembibliotheken, damit sich
-      # PySide6 überhaupt importieren lässt.
+      # Qt braucht unter Linux auch ohne Bildschirm ein paar Systembibliotheken,
+      # damit sich PySide6 überhaupt importieren lässt.
       - name: Qt-Systembibliotheken
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -42,10 +58,13 @@ jobs:
       - name: Abhängigkeiten
         run: pip install -e ".[dev]"
 
+      # Die Schwachstellenprüfung hängt nicht vom Betriebssystem ab - einmal genügt.
       - name: Qualitätstore
         env:
           QT_QPA_PLATFORM: offscreen
-        run: python tools/quality_gate.py --audit
+        run: >-
+          python tools/quality_gate.py
+          ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' && '--audit' || '' }}
 
       - name: Startdatenbank unverändert?
         run: git diff --exit-code -- src/brotrechner/data/seed/ingredients.json
