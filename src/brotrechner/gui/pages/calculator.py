@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from html import escape
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QRadioButton,
     QScrollArea,
@@ -51,13 +52,20 @@ from brotrechner.core.analysis import (
     DEFAULT_ENERGY_PRICE_EUR_PER_KWH,
     RecipeAnalysis,
     ResolvedItem,
+    StageSummary,
     analyze,
 )
-from brotrechner.core.models import Ingredient, Recipe, RecipeItem
+from brotrechner.core.models import Ingredient, Recipe, RecipeItem, Stage
 from brotrechner.core.plausibility import ProcessFinding, check_process, has_errors
 from brotrechner.core.portions import MAX_NAME_LENGTH, MAX_WEIGHT_G, SUGGESTED_NAMES, Portion
 from brotrechner.core.validation import Severity
-from brotrechner.gui.models.recipe_model import RECIPE_COLUMNS, RecipeItemsModel
+from brotrechner.gui.models.recipe_model import (
+    MANUFACTURER_COLUMN,
+    NAME_COLUMN,
+    RECIPE_COLUMNS,
+    STAGE_COLUMN,
+    RecipeItemsModel,
+)
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card, StatCard
 from brotrechner.gui.widgets.ingredient_picker import IngredientPicker
@@ -136,6 +144,15 @@ class CalculatorPage(QWidget):
         mix_card = Card("Zutaten")
         row = QHBoxLayout()
         row.setSpacing(SPACING["sm"])
+        self.cmb_stage = QComboBox()
+        for stage in Stage:
+            self.cmb_stage.addItem(stage.label, stage)
+        self.cmb_stage.setCurrentIndex(list(Stage).index(Stage.MAIN))
+        self.cmb_stage.setToolTip(
+            "Stufe, in die die nächste Zutat kommt - etwa das Mehl für den\n"
+            "Sauerteig. Bereits eingetragene Zeilen verlegt ein Rechtsklick."
+        )
+        row.addWidget(self.cmb_stage)
         self.picker = IngredientPicker()
         self.spin_amount = QDoubleSpinBox()
         self.spin_amount.setRange(0.0, 100_000.0)
@@ -166,7 +183,9 @@ class CalculatorPage(QWidget):
         header = self.table.horizontalHeader()
         for column, (_, width, _) in enumerate(RECIPE_COLUMNS):
             self.table.setColumnWidth(column, width)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._update_optional_columns()
         mix_card.add_widget(self.table, 1)
 
         self.lbl_summary = QLabel()
@@ -380,6 +399,13 @@ class CalculatorPage(QWidget):
         self._items_model.rowsInserted.connect(lambda *_: self._schedule())
         self._items_model.rowsRemoved.connect(lambda *_: self._schedule())
         self._items_model.modelReset.connect(self._schedule)
+        for signal in (
+            self._items_model.rowsInserted,
+            self._items_model.rowsRemoved,
+            self._items_model.modelReset,
+        ):
+            signal.connect(lambda *_: self._update_optional_columns())
+        self.table.customContextMenuRequested.connect(self._on_table_menu)
 
         for spin in (
             self.spin_dough,
@@ -552,18 +578,53 @@ class CalculatorPage(QWidget):
             self.spin_amount.setFocus()
             return
 
-        self._items_model.add_item(ingredient, amount)
+        self._items_model.add_item(ingredient, amount, self.cmb_stage.currentData())
         self.spin_amount.setValue(0.0)
         self.picker.setCurrentIndex(-1)
         self.picker.clearEditText()
         self.picker.setFocus()
 
+    def _selected_rows(self) -> list[int]:
+        return sorted({index.row() for index in self.table.selectionModel().selectedRows()})
+
+    def _stage_menu(self) -> QMenu | None:
+        """Menü, das die markierten Zeilen in eine Stufe verlegt; ohne Auswahl keins."""
+        rows = self._selected_rows()
+        if not rows:
+            return None
+        items = self._items_model.items
+        current = {items[row].stage for row in rows}
+        menu = QMenu(self.table)
+        menu.addSection("In Stufe verlegen")
+        for stage in Stage:
+            action = menu.addAction(stage.label)
+            action.setCheckable(True)
+            action.setChecked(current == {stage})
+            action.triggered.connect(lambda _=False, s=stage: self._items_model.set_stage(rows, s))
+        return menu
+
+    def _on_table_menu(self, position: QPoint) -> None:
+        menu = self._stage_menu()
+        if menu is not None:
+            menu.exec(self.table.viewport().mapToGlobal(position))
+
+    def _update_optional_columns(self) -> None:
+        """Stufe und Hersteller nur, wenn sie etwas zu sagen haben.
+
+        Die meisten Brote haben nur einen Hauptteig, die meisten Zutaten keinen
+        Hersteller - beide Spalten kosteten sonst den Platz, der dem
+        Zutatennamen fehlte.
+        """
+        model = self._items_model
+        self.table.setColumnHidden(STAGE_COLUMN, not model.has_stages)
+        self.table.setColumnHidden(MANUFACTURER_COLUMN, not model.has_manufacturers)
+
     def _on_remove(self) -> None:
-        rows = {index.row() for index in self.table.selectionModel().selectedRows()}
+        rows = self._selected_rows()
         if not rows:
             self.status_message.emit("Bitte zuerst eine Zeile auswählen.")
             return
-        self._items_model.remove_rows(sorted(rows))
+        self._items_model.remove_rows(rows)
 
     # ── Berechnung ────────────────────────────────────────────────────────
 
@@ -726,7 +787,17 @@ def _baking_text(analysis: RecipeAnalysis) -> str:
             f"Salz {format_number(salt / analysis.flour_mass_g * 100, 1)} % vom Mehl "
             f"({format_number(salt, 1)} g gesamt). Üblich sind 1,8 bis 2,2 %."
         )
+    if analysis.has_stages:
+        lines.append("\n".join(_stage_line(summary) for summary in analysis.stages))
     return "\n\n".join(lines)
+
+
+def _stage_line(summary: StageSummary) -> str:
+    """Eine Stufe in einer Zeile: was abzuwiegen ist, ihre TA und ihr Mehlanteil."""
+    head = f"{summary.stage.label}: {summary.weight_g:.0f} g"
+    if summary.flour_g <= 0:
+        return f"{head}, ohne Mehl"
+    return f"{head}, TA {summary.dough_yield:.0f}, {summary.flour_share_percent:.0f} % des Mehls"
 
 
 def _cost_html(analysis: RecipeAnalysis) -> str:

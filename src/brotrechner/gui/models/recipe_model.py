@@ -12,13 +12,22 @@ from brotrechner.core.analysis import RecipeAnalysis, ResolvedItem
 from brotrechner.core.models import Ingredient, Recipe, Stage
 from brotrechner.i18n import format_number
 
-__all__ = ["RECIPE_COLUMNS", "RecipeItemsModel", "RecipeListModel"]
+__all__ = [
+    "MANUFACTURER_COLUMN",
+    "NAME_COLUMN",
+    "RECIPE_COLUMNS",
+    "STAGE_COLUMN",
+    "RecipeItemsModel",
+    "RecipeListModel",
+]
 
 _Index = QModelIndex | QPersistentModelIndex
 
 #: Spalten der Zusammenstellung. Nur die Menge ist bearbeitbar - Namen ändert
-#: man in der Zutatenverwaltung, nicht im Rezept.
+#: man in der Zutatenverwaltung, nicht im Rezept, die Stufe über das
+#: Kontextmenü der Tabelle.
 RECIPE_COLUMNS: Final[tuple[tuple[str, int, bool], ...]] = (
+    ("Stufe", 92, False),
     ("Zutat", 190, False),
     ("Hersteller", 120, False),
     ("Menge (g)", 90, True),
@@ -27,7 +36,21 @@ RECIPE_COLUMNS: Final[tuple[tuple[str, int, bool], ...]] = (
     ("Kosten", 82, False),
 )
 
-_COL_NAME, _COL_MANUFACTURER, _COL_AMOUNT, _COL_SHARE, _COL_BAKER, _COL_COST = range(6)
+(
+    _COL_STAGE,
+    _COL_NAME,
+    _COL_MANUFACTURER,
+    _COL_AMOUNT,
+    _COL_SHARE,
+    _COL_BAKER,
+    _COL_COST,
+) = range(len(RECIPE_COLUMNS))
+
+#: Spalten, die die Seite gesondert behandelt: Stufe und Hersteller blendet
+#: sie aus, solange sie nichts zu sagen haben, die Zutat füllt den übrigen Platz.
+STAGE_COLUMN: Final = _COL_STAGE
+NAME_COLUMN: Final = _COL_NAME
+MANUFACTURER_COLUMN: Final = _COL_MANUFACTURER
 
 
 class RecipeItemsModel(QAbstractTableModel):
@@ -84,6 +107,43 @@ class RecipeItemsModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), position, position)
         self._items.insert(position, ResolvedItem(ingredient, amount_g, stage))
         self.endInsertRows()
+
+    @property
+    def has_stages(self) -> bool:
+        """Steht eine Zutat in einer anderen Stufe als dem Hauptteig?"""
+        return any(item.stage is not Stage.MAIN for item in self._items)
+
+    @property
+    def has_manufacturers(self) -> bool:
+        """Hat eine Zutat einen Hersteller?"""
+        return any(item.ingredient.manufacturer for item in self._items)
+
+    def set_stage(self, rows: Sequence[int], stage: Stage) -> None:
+        """Verlegt Zeilen in eine Stufe.
+
+        Danach gilt dasselbe wie beim Hinzufügen: Dieselbe Zutat steht je
+        Stufe nur einmal da, und die Vorstufen stehen vor dem Hauptteig.
+        """
+        chosen = {row for row in rows if 0 <= row < len(self._items)}
+        if not chosen:
+            return
+        merged: list[ResolvedItem] = []
+        for row, item in enumerate(self._items):
+            moved = replace(item, stage=stage) if row in chosen else item
+            for position, existing in enumerate(merged):
+                if (
+                    existing.ingredient.key == moved.ingredient.key
+                    and existing.stage is moved.stage
+                ):
+                    merged[position] = replace(
+                        existing, amount_g=existing.amount_g + moved.amount_g
+                    )
+                    break
+            else:
+                merged.append(moved)
+        order = list(Stage)
+        merged.sort(key=lambda item: order.index(item.stage))
+        self.set_items(merged)
 
     def remove_rows(self, rows: Sequence[int]) -> None:
         """Entfernt mehrere Zeilen (von hinten, damit Indizes gültig bleiben)."""
@@ -144,23 +204,23 @@ class RecipeItemsModel(QAbstractTableModel):
             return item.amount_g
 
         if role == Qt.ItemDataRole.ToolTipRole:
-            if column == _COL_COST and not item.ingredient.has_price:
-                return "Für diese Zutat ist kein Preis hinterlegt."
-            if column == _COL_BAKER and not item.ingredient.is_flour:
-                return "Bezogen auf die gesamte Mehlmenge des Rezepts."
-            return item.ingredient.display_name
-
+            return _tooltip(item, column)
         if role != Qt.ItemDataRole.DisplayRole:
             return None
+        return self._display(item, index.row(), column)
 
-        if column == _COL_NAME:
-            return item.ingredient.name
-        if column == _COL_MANUFACTURER:
-            return item.ingredient.manufacturer or "—"
-        if column == _COL_AMOUNT:
-            return format_number(item.amount_g, 1)
+    def _display(self, item: ResolvedItem, row: int, column: int) -> str | None:
+        """Angezeigter Text einer Zelle."""
+        own = {
+            _COL_STAGE: item.stage.label,
+            _COL_NAME: item.ingredient.name,
+            _COL_MANUFACTURER: item.ingredient.manufacturer or "—",
+            _COL_AMOUNT: format_number(item.amount_g, 1),
+        }
+        if column in own:
+            return own[column]
 
-        line = self._line_for(index.row())
+        line = self._line_for(row)
         if line is None:
             return "—"
         if column == _COL_SHARE:
@@ -195,6 +255,17 @@ class RecipeItemsModel(QAbstractTableModel):
         if self._analysis is None or row >= len(self._analysis.lines):
             return None
         return self._analysis.lines[row]
+
+
+def _tooltip(item: ResolvedItem, column: int) -> str:
+    """Tooltip einer Zelle: der Hinweis zur Spalte, sonst der volle Zutatenname."""
+    if column == _COL_STAGE:
+        return "Stufe ändern: Zeilen markieren und rechts klicken."
+    if column == _COL_COST and not item.ingredient.has_price:
+        return "Für diese Zutat ist kein Preis hinterlegt."
+    if column == _COL_BAKER and not item.ingredient.is_flour:
+        return "Bezogen auf die gesamte Mehlmenge des Rezepts."
+    return item.ingredient.display_name
 
 
 class RecipeListModel(QAbstractTableModel):

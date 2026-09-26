@@ -19,6 +19,9 @@ Nährwerte je 100 g, Bäckerprozent, Teigausbeute, Hydration und Kosten stehen
 sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
 Mit dem Gewicht einer Portion – Scheibe, Stück, Brötchen – kommen Nährwerte
 und Preis je Portion hinzu und wie viele Portionen das Brot ergibt.
+Sauerteig, Vorteig, Brüh-, Quell- und Kochstück sind eigene Stufen des
+Rezepts – mit dem, was je Stufe abzuwiegen ist, ihrer Teigausbeute und ihrem
+Anteil am Mehl.
 
 **Etikettieren.** Ein Nährwert-Etikett in vier Formaten oder einem eigenen
 (30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern,

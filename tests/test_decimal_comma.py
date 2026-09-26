@@ -92,8 +92,11 @@ class TestCalculator:
         return widget
 
     def test_share_column(self, page: object) -> None:
+        from brotrechner.gui.models.recipe_model import RECIPE_COLUMNS
+
         model = page._items_model  # type: ignore[attr-defined]
-        share = model.data(model.index(0, 3))
+        column = [title for title, *_ in RECIPE_COLUMNS].index("Anteil")
+        share = model.data(model.index(0, column))
         assert share == "58,8 %"
 
     def test_scale_factor_and_bake_loss(self, page: object) -> None:

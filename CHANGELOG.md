@@ -216,6 +216,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nicht nebeneinander auf das Format, fehlt die Spalte je Portion, und der
   Dialog sagt das. Der Schalter „Nährwerte je Scheibe (45 g)“ im Etikettdialog
   wird gemerkt.
+- **Rezeptstufen: Sauerteig, Vorteig, Brühstück, Quellstück, Kochstück,
+  Hauptteig.** Jede Zutat gehört zu einer Stufe; gewählt wird sie vor
+  „Hinzufügen“, markierte Zeilen verlegt ein Rechtsklick. Dieselbe Zutat darf
+  in mehreren Stufen stehen, etwa das Mehl im Sauerteig und im Hauptteig.
+  „Backtechnik“ nennt je Stufe, was abzuwiegen ist, ihre Teigausbeute und
+  ihren Anteil am Mehl („Sauerteig: 420 g, TA 200, 30 % des Mehls“). Die
+  Spalte „Stufe“ erscheint erst, wenn ein Rezept Stufen hat, die Spalte
+  „Hersteller“ nur, wenn eine Zutat einen hat - beide nahmen dem Zutatennamen
+  sonst den Platz. Rezepte älterer Versionen bestehen aus dem Hauptteig.
 
 ### Geändert
 
