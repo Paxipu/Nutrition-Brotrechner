@@ -85,15 +85,19 @@ zuletzt gebacken wurde.
 auch Python selbst. Entpacken, im Ordner `Brotrechner` auf `Brotrechner.exe`
 doppelklicken, fertig. Es hängt an jedem Release und entsteht bei jedem
 Versions-Tag in GitHub Actions („Windows-Paket“), wo es sich auch von Hand
-starten lässt. Vor dem Hochladen prüft der Lauf das fertige Paket:
-Kommandozeile, Datenprüfung, ein Etikett und ein PDF-Bericht mit
-`brotrechner-cli selftest` und der Start der Oberfläche. Liegt neben
-`Brotrechner.exe` ein Ordner `data`, arbeitet das Programm portabel mit den
-Daten darin. Selbst bauen:
+starten lässt. Die CI baut es außerdem bei jedem Pull Request und hält es eine
+Woche zum Ausprobieren bereit („Brotrechner-windows-test“). Jeder dieser
+Läufe prüft das fertige Paket: Kommandozeile, Datenprüfung, ein Etikett und
+ein PDF-Bericht mit `brotrechner-cli selftest`, das Qt-Plugin für Fenster und
+der Start der Oberfläche. Liegt neben `Brotrechner.exe` ein Ordner `data`,
+arbeitet das Programm portabel mit den Daten darin.
 
-```bash
-pip install ".[pdf]" pyinstaller
-pyinstaller packaging/brotrechner.spec --noconfirm   # Ergebnis in dist/Brotrechner
+Selbst bauen und prüfen – dasselbe Skript wie in der CI, Ergebnis in
+`dist\Brotrechner`:
+
+```bat
+pip install ".[pdf]" -r packaging\requirements.txt
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
 ```
 
 **Ohne Installation, per Doppelklick.** Im Hauptordner liegt die Datei
@@ -230,7 +234,8 @@ src/brotrechner/
 └── gui/         Qt-Oberfläche, enthält keine Fachlogik
 ```
 
-Daneben liegt in `packaging/` der Bauplan für das Windows-Paket.
+Daneben liegen in `packaging/` der Bauplan für das Windows-Paket und das
+Skript, das es baut und prüft.
 
 Die Schichten importieren ausschließlich „nach unten“: `gui` → `export`/`data`
 → `core`. Deshalb lässt sich die gesamte Rechnung ohne Qt testen, und `core`

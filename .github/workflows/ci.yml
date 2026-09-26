@@ -68,3 +68,34 @@ jobs:
 
       - name: Startdatenbank unverändert?
         run: git diff --exit-code -- src/brotrechner/data/seed/ingredients.json
+
+  # Das Windows-Programmpaket wird sonst erst beim Release gebaut - ein Fehler
+  # darin fiele dann zu spät auf. Das Ergebnis liegt eine Woche zum Ausprobieren
+  # bereit.
+  windows-package:
+    name: Windows-Paket bauen und prüfen
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Abhängigkeiten
+        run: pip install ".[pdf]" -r packaging/requirements.txt
+
+      - name: Paket bauen und prüfen
+        run: ./packaging/build_windows.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Brotrechner-windows-test
+          path: dist/Brotrechner
+          if-no-files-found: error
+          retention-days: 7
