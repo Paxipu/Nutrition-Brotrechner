@@ -199,14 +199,21 @@ class TestNeverTruncated:
         """Der feste Teil passt, das vollständige Verzeichnis nicht mehr.
 
         Der Fuß rückt dann unter das Verzeichnis und wird abgeschnitten - das
-        darf nicht als "passt" durchgehen.
+        darf nicht als "passt" durchgehen. Ab wie vielen Zutaten das so ist,
+        hängt von der Schrift des Systems ab: mit DejaVu ab 27, mit Liberation
+        Sans (so breit wie Arial) erst ab 34. Gesucht wird deshalb die erste
+        Zahl, bei der das Verzeichnis nicht mehr passt.
         """
-        many = tuple(f"*Weizen*mehl Nummer {i}" for i in range(30))
-        report = measure_label(
-            BREAD, sale_options(size=LabelSize.LARGE, ingredients=many), fonts=FONTS
-        )
+        for count in range(20, 100):
+            many = tuple(f"*Weizen*mehl Nummer {i}" for i in range(count))
+            report = measure_label(
+                BREAD, sale_options(size=LabelSize.LARGE, ingredients=many), fonts=FONTS
+            )
+            if report.required_height_px > report.available_height_px:
+                break
+        else:
+            pytest.fail("Auch 99 Zutaten füllen das große Etikett nicht")
         assert report.fixed_part_fits
-        assert report.required_height_px > report.available_height_px
         assert not report.fits
 
     @settings(max_examples=40)

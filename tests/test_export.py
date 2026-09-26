@@ -565,8 +565,12 @@ class TestPortionColumn:
             portion=Portion("Kastenweißbrotscheibe", 45.5),
         )
         texts = [drawn.text for drawn in _drawn_texts(options)]
-        # Auf 30 mm bricht sogar die Überschrift um - geprüft werden die Spaltenköpfe.
-        assert "je 100 g" not in texts
+        # Auf 30 mm bricht die Überschrift um, je nach Schrift an anderer Stelle:
+        # "Nährwert|e je 100 g" mit DejaVu, "Nährwerte|je 100 g" mit Arial.
+        # Bis zur ersten Zeile darf deshalb nur sie stehen, kein Spaltenkopf.
+        start = next(i for i, text in enumerate(texts) if text.startswith("Nährw"))
+        heading = texts[start : texts.index("Brennwert", start)]
+        assert "".join(heading).replace(" ", "") == "Nährwerteje100g"
         assert not [text for text in texts if text.startswith(("je Kasten", "(45,5 g)"))]
         found = measure_label(BREAD, options, fonts=FONTS)
         assert not found.portion_fits
