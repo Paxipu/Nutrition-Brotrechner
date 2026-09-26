@@ -352,8 +352,10 @@ class TestStart:
         from PySide6.QtWidgets import QApplication
 
         from brotrechner.gui import app
+        from brotrechner.logfile import LOG_FILE
 
         shown: list[str] = []
+        logged: list[str] = []
 
         def fake_exec(self: QApplication) -> int:
             del self
@@ -361,6 +363,7 @@ class TestStart:
             # geschlossen, aber nicht zerstört - und fragten beim Schließen nach.
             opened = [w for w in QApplication.topLevelWidgets() if w.isVisible()]
             shown.extend(w.windowTitle() for w in opened)
+            logged.append((data_dir / LOG_FILE).read_text(encoding="utf-8"))
             for widget in opened:
                 widget.close()
             return 5
@@ -368,6 +371,9 @@ class TestStart:
         monkeypatch.setattr(QApplication, "exec", fake_exec)
         assert app.run([], data_dir=data_dir) == 5
         assert any(title.startswith("Brotrechner") for title in shown)
+        # Daran erkennt die Prüfung des Programmpakets einen gelungenen Start:
+        # "startet" steht schon im Protokoll, bevor das Hauptfenster gebaut wird.
+        assert "Hauptfenster bereit" in logged[0]
 
 
 class TestPrinting:

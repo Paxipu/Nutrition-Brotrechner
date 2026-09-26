@@ -95,6 +95,10 @@ def run(
         )
         return 1
     window.show()
+    # Erst jetzt ist der Start gelungen - "startet" steht schon vor dem Aufbau
+    # des Hauptfensters im Protokoll. Die Prüfung des Programmpakets wartet
+    # auf diese Zeile.
+    log.info("Hauptfenster bereit")
     return app.exec()
 
 
