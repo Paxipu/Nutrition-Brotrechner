@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from brotrechner.core.reference import AmpelLevel
 from brotrechner.gui.theme import SPACING, Tokens
 
-__all__ = ["AmpelDot", "Card", "ClickableLabel", "IntakeBar", "StatCard", "separator"]
+__all__ = ["AmpelDot", "Card", "ClickableLabel", "IntakeBar", "StatCard"]
 
 
 class ClickableLabel(QLabel):
@@ -219,12 +219,3 @@ class IntakeBar(QWidget):
             painter.setBrush(QColor(colour))
             painter.drawRoundedRect(0, top, max(3, filled), self._HEIGHT, 3, 3)
         painter.end()
-
-
-def separator(parent: QWidget | None = None) -> QFrame:
-    """Waagerechte Trennlinie im Kartenstil."""
-    line = QFrame(parent)
-    line.setProperty("role", "separator")
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setFixedHeight(1)
-    return line

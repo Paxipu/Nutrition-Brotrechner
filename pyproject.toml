@@ -148,7 +148,7 @@ filterwarnings = ["error::DeprecationWarning:brotrechner.*"]
 [tool.coverage.run]
 branch = true
 source = ["src/brotrechner"]
-omit = ["*/gui/*", "*/__main__.py"]
+omit = ["*/__main__.py"]
 
 [tool.coverage.report]
 exclude_lines = [

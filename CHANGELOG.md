@@ -237,6 +237,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Geändert
 
+- **Die Testabdeckung schließt die Oberfläche ein.** Bisher war das Paket
+  `gui` - der größte Teil des Programms - von der Messung ausgenommen. Mit
+  neuen Tests für Hauptfenster, Dialoge, Seiten, Tabellenmodelle und
+  Bausteine liegt die Abdeckung jetzt bei 96 % des ganzen Programms. Ein
+  Wächter lässt Oberflächentests an einem unbeantworteten Dialog scheitern,
+  statt den Testlauf anzuhalten, und Tests legen keinen Ausgabeordner mehr im
+  echten Benutzerverzeichnis an. Die nie benutzte Hilfsfunktion
+  `separator()` ist entfallen.
+
 - **„Brennwert“ statt „Energie“** auf dem Etikett, im Bericht, in der CSV und
   im Rechner. So heißt die Angabe in der deutschen Fassung der VO (EU)
   Nr. 1169/2011 (Artikel 30, Anhang XV). „Energie“ steht nur noch dort, wo der
