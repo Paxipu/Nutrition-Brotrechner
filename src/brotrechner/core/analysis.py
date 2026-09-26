@@ -140,6 +140,17 @@ class StageSummary:
             return 0.0
         return (self.flour_g + self.water_g) / self.flour_g * 100.0
 
+    @property
+    def ratio_text(self) -> str:
+        """Teigausbeute und Mehlanteil, etwa "TA 200 · 40 % des Mehls".
+
+        Beide ändern sich nicht, wenn alle Mengen auf den gewogenen Rohteig
+        umgerechnet werden - anders als das Gewicht der Stufe.
+        """
+        if self.flour_g <= 0:
+            return "ohne Mehl"
+        return f"TA {self.dough_yield:.0f} · {self.flour_share_percent:.0f} % des Mehls"
+
 
 @dataclass(frozen=True, slots=True)
 class RecipeAnalysis:

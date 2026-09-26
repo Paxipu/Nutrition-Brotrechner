@@ -328,11 +328,24 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
 
 
 def _ingredients_table(analysis: RecipeAnalysis) -> Any:
-    """Zutatentabelle mit Hersteller, Anteil, Bäckerprozent und Kosten."""
-    rows: list[list[str]] = [
-        ["Zutat", "Hersteller", "Menge", "Anteil", "Bäcker%", "€/100 g", "Kosten"]
-    ]
-    for line in analysis.lines:
+    """Zutatentabelle mit Hersteller, Anteil, Bäckerprozent und Kosten.
+
+    Hat das Rezept Stufen, stehen die Zutaten nach Stufen geordnet, jede
+    Stufe mit einer Überschrift samt Teigausbeute und Mehlanteil.
+    """
+    header = ["Zutat", "Hersteller", "Menge", "Anteil", "Bäcker%", "€/100 g", "Kosten"]
+    rows: list[list[str]] = [header]
+    headings: list[int] = []
+    summaries = {summary.stage: summary for summary in analysis.stages}
+    order = list(summaries)
+    lines = sorted(analysis.lines, key=lambda line: order.index(line.stage))
+    for index, line in enumerate(lines):
+        if analysis.has_stages and (index == 0 or lines[index - 1].stage is not line.stage):
+            summary = summaries[line.stage]
+            headings.append(len(rows))
+            rows.append(
+                [f"{summary.stage.label} · {summary.ratio_text}"] + [""] * (len(header) - 1)
+            )
         ingredient = line.ingredient
         rows.append(
             [
@@ -352,19 +365,24 @@ def _ingredients_table(analysis: RecipeAnalysis) -> Any:
         hAlign="LEFT",
         repeatRows=1,
     )
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
-                ("TOPPADDING", (0, 0), (-1, -1), 3.5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
-            ]
-        )
-    )
+    style: list[tuple[Any, ...]] = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+    ]
+    for row in headings:
+        style += [
+            ("SPAN", (0, row), (-1, row)),
+            ("ALIGN", (0, row), (-1, row), "LEFT"),
+            ("FONTNAME", (0, row), (-1, row), "Helvetica-Bold"),
+            ("TEXTCOLOR", (0, row), (-1, row), colors.HexColor(_SECONDARY)),
+            ("BACKGROUND", (0, row), (-1, row), colors.HexColor("#F4F7FA")),
+        ]
+    table.setStyle(TableStyle(style))
     return table
 
 

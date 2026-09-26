@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from brotrechner.core.analysis import RecipeAnalysis, analyze, resolve_items
+from brotrechner.core.analysis import IngredientLine, RecipeAnalysis, analyze, resolve_items
 from brotrechner.core.models import Ingredient, Recipe
 from brotrechner.gui.models.recipe_model import RecipeListModel
 from brotrechner.gui.theme import SPACING, Tokens
@@ -239,14 +239,28 @@ class RecipesPage(QWidget):
                 return name
             return f"{name} <span style='color:{t.text_muted}'>({manufacturer})</span>"
 
-        rows = "".join(
-            "<tr><td style='padding:1px 8px 1px 0'>"
-            + ingredient_cell(line.ingredient.name, line.ingredient.manufacturer)
-            + f"</td><td align='right'>{format_number(line.amount_g, 0)} g</td>"
-            + f"<td align='right' style='color:{t.text_muted}'>"
-            + f"{line.baker_percent:.0f} %</td></tr>"
-            for line in analysis.lines
-        )
+        def ingredient_row(line: IngredientLine) -> str:
+            return (
+                "<tr><td style='padding:1px 8px 1px 0'>"
+                + ingredient_cell(line.ingredient.name, line.ingredient.manufacturer)
+                + f"</td><td align='right'>{format_number(line.amount_g, 0)} g</td>"
+                + f"<td align='right' style='color:{t.text_muted}'>"
+                + f"{line.baker_percent:.0f} %</td></tr>"
+            )
+
+        if analysis.has_stages:
+            # Nach Stufen geordnet, jede mit Teigausbeute und Mehlanteil.
+            rows = "".join(
+                "<tr><td colspan='3' style='padding:6px 0 1px 0'>"
+                f"<b>{summary.stage.label}</b> "
+                f"<span style='color:{t.text_muted}'>{summary.ratio_text}</span></td></tr>"
+                + "".join(
+                    ingredient_row(line) for line in analysis.lines if line.stage is summary.stage
+                )
+                for summary in analysis.stages
+            )
+        else:
+            rows = "".join(ingredient_row(line) for line in analysis.lines)
         table = (
             "<p style='margin:10px 0 2px 0'><b>Zutaten</b> "
             f"<span style='color:{t.text_muted}'>(Menge · Bäckerprozent)</span></p>"

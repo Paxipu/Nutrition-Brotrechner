@@ -110,7 +110,7 @@ def write_analysis_csv(path: Path, analysis: RecipeAnalysis, *, recipe_name: str
         if recipe_name:
             writer.writerow([f"Rezept: {recipe_name}"])
         writer.writerow(
-            ["Zutat", "Hersteller", "Menge (g)", "Anteil (%)", "Bäcker (%)", "Kosten (€)"]
+            ["Zutat", "Hersteller", "Menge (g)", "Anteil (%)", "Bäcker (%)", "Kosten (€)", "Stufe"]
         )
         for line in analysis.lines:
             writer.writerow(
@@ -121,6 +121,7 @@ def write_analysis_csv(path: Path, analysis: RecipeAnalysis, *, recipe_name: str
                     format_number(line.share_percent),
                     format_number(line.baker_percent, 0),
                     format_number(line.cost, 2) if line.has_price else "",
+                    line.stage.label,
                 ]
             )
         writer.writerow([])

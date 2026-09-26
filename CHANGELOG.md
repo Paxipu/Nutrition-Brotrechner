@@ -224,7 +224,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   ihren Anteil am Mehl („Sauerteig: 420 g, TA 200, 30 % des Mehls“). Die
   Spalte „Stufe“ erscheint erst, wenn ein Rezept Stufen hat, die Spalte
   „Hersteller“ nur, wenn eine Zutat einen hat - beide nahmen dem Zutatennamen
-  sonst den Platz. Rezepte älterer Versionen bestehen aus dem Hauptteig.
+  sonst den Platz. PDF-Bericht und Rezeptvorschau ordnen die Zutaten nach
+  Stufen, jede mit Teigausbeute und Mehlanteil; die CSV der Auswertung hat
+  eine Spalte „Stufe“. Im Zutatenverzeichnis des Etiketts steht dieselbe
+  Zutat weiterhin einmal. Rezepte älterer Versionen bestehen aus dem
+  Hauptteig.
 
 ### Geändert
 
