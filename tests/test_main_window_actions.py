@@ -495,3 +495,24 @@ class TestFailures:
             assert "Altdaten übernommen" in shown.titles("information")
         finally:
             widget.close()
+
+
+def test_the_export_folder_follows_the_data_dir(
+    qapp: object, tmp_path: Path, data_dir: Path, dialogs: dict[str, object]
+) -> None:
+    """Ohne Dokumentenordner gehören die Ausgaben in das Datenverzeichnis des Fensters.
+
+    Bisher landeten sie im Datenverzeichnis des Systems, auch wenn der
+    Brotrechner mit ``--data-dir`` auf ein anderes gerichtet war.
+    """
+    del qapp, dialogs
+    from brotrechner.gui.main_window import MainWindow
+
+    own = tmp_path / "eigen"
+    own.mkdir()
+    widget = MainWindow(data_dir=own)
+    try:
+        assert widget._export_dir() == own / "exports"
+    finally:
+        widget.close()
+    assert not (data_dir / "exports").exists()

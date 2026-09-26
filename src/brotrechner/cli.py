@@ -151,7 +151,7 @@ def _run_info(data_dir: Path, ingredient_count: int, recipe_count: int) -> int:
     print(f"brotrechner {__version__}")
     print(f"Datenverzeichnis : {data_dir}")
     print(f"Sicherungen      : {paths.backup_dir(data_dir, create=False)}")
-    print(f"Ausgabeordner    : {paths.default_export_dir()}")
+    print(f"Ausgabeordner    : {paths.default_export_dir(data_dir)}")
     print(f"Zutaten          : {ingredient_count}")
     print(f"Rezepte          : {recipe_count}")
     return 0

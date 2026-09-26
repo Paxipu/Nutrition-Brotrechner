@@ -957,7 +957,7 @@ class MainWindow(QMainWindow):
     def _export_dir(self) -> Path:
         """Standardordner für Ausgaben, bei Bedarf angelegt."""
         configured = self._settings.export_dir
-        path = Path(configured) if configured else paths.default_export_dir()
+        path = Path(configured) if configured else paths.default_export_dir(self._data_dir)
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError:  # pragma: no cover - z. B. schreibgeschützt

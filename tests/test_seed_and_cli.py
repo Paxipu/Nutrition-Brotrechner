@@ -263,6 +263,19 @@ class TestCli:
         assert "Datenverzeichnis" in out
         assert "Zutaten" in out
 
+    def test_info_stays_inside_the_given_data_dir(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ohne Dokumentenordner nannte ``info`` den Ausgabeordner des Systems - und legte
+        dessen Datenverzeichnis dabei an, obwohl ``--data-dir`` woanders hinzeigte."""
+        system = tmp_path / "system"
+        own = tmp_path / "eigen"
+        monkeypatch.setenv(paths.DATA_DIR_ENV_VAR, str(system))
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path / "leer"))
+        assert cli.main(["--data-dir", str(own), "info"]) == 0
+        assert f"Ausgabeordner    : {own / 'exports'}" in capsys.readouterr().out.splitlines()
+        assert not system.exists()
+
     def test_check_passes_on_the_seed(
         self, data_dir: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

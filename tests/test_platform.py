@@ -94,6 +94,36 @@ class TestDataDirPerPlatform:
     def test_export_dir_can_be_created(self, data_dir: Path) -> None:
         assert paths.default_export_dir(create=True).is_dir()
 
+    def test_export_dir_follows_the_given_data_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mit ``--data-dir`` gehören auch die Ausgaben dorthin, nicht ins Benutzerprofil."""
+        monkeypatch.setattr("brotrechner.paths.Path.home", staticmethod(lambda: tmp_path / "leer"))
+        own = tmp_path / "anderswo"
+        assert paths.default_export_dir(own) == own / "exports"
+
+    def test_the_documents_folder_comes_first(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dort suchen Anwender ihre Etiketten - auch bei einem eigenen Datenverzeichnis."""
+        home = tmp_path / "home"
+        (home / "Documents").mkdir(parents=True)
+        monkeypatch.setattr("brotrechner.paths.Path.home", staticmethod(lambda: home))
+        expected = home / "Documents" / "Brotrechner"
+        assert paths.default_export_dir(tmp_path / "anderswo") == expected
+        assert not expected.exists()
+        assert paths.default_export_dir(create=True).is_dir()
+
+    def test_asking_for_the_export_dir_creates_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bisher entstand dabei nebenbei das Datenverzeichnis des Systems."""
+        system = tmp_path / "system"
+        monkeypatch.setenv(paths.DATA_DIR_ENV_VAR, str(system))
+        monkeypatch.setattr("brotrechner.paths.Path.home", staticmethod(lambda: tmp_path / "leer"))
+        assert paths.default_export_dir() == system / "exports"
+        assert not system.exists()
+
 
 class TestFontDiscovery:
     def test_finds_a_font_on_this_machine(self) -> None:

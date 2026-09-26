@@ -123,15 +123,24 @@ def backup_dir(base: Path | None = None, *, create: bool = True) -> Path:
     return path
 
 
-def default_export_dir(*, create: bool = False) -> Path:
+def default_export_dir(base: Path | None = None, *, create: bool = False) -> Path:
     """Standardordner für Etiketten, Berichte und CSV-Dateien.
 
     Bevorzugt wird ein Unterordner im Dokumentenverzeichnis, weil Anwender ihre
     Etiketten dort suchen. Existiert kein Dokumentenordner, fällt die Funktion
     auf ``<Datenverzeichnis>/exports`` zurück.
+
+    Args:
+        base: Datenverzeichnis des Programms, etwa aus ``--data-dir``. ``None``
+            verwendet das Standardverzeichnis des Systems.
+        create: Verzeichnis anlegen, falls es fehlt. Sonst entsteht nichts,
+            auch nicht das Datenverzeichnis.
     """
     documents = Path.home() / "Documents"
-    path = documents / APP_NAME if documents.is_dir() else data_dir() / "exports"
+    if documents.is_dir():
+        path = documents / APP_NAME
+    else:
+        path = (base or data_dir(create=create)) / "exports"
     if create:
         path.mkdir(parents=True, exist_ok=True)
     return path
