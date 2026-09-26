@@ -87,6 +87,11 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Komma verwenden. Dasselbe galt für die Anteilsspalte im Rechner („60.0 %“
   neben „600,0“ g), Skalierungsfaktor und Backverlust dort sowie die Meldungen
   zu Backverlust, Massenbilanz und Mehlanteil. Jetzt steht überall das Komma.
+- **Die Spalte mit den Befunden der Datenprüfung ließ sich nicht sortieren.**
+  Ein Klick auf ihren Kopf änderte nichts, weil jede Zutat denselben
+  Sortierwert hatte. Jetzt stehen Fehler vor Warnungen. Außerdem nutzen die
+  Filter der Zutatenliste ab Qt 6.10 dessen neue Schnittstelle; die alte gilt
+  dort als veraltet und wird in einer künftigen Fassung entfallen.
 - **Die Kostenübersicht im PDF-Bericht wurde über den Seitenumbruch
   verteilt.** Reichte der Platz nicht, standen die letzten Zeilen allein oben
   auf der nächsten Seite. Jetzt rückt die Übersicht als Ganzes weiter.
