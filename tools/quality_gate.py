@@ -47,12 +47,12 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
     steps = [
         Step(
             "Lint",
-            [*python, "ruff", "check", SRC, TESTS, "tools"],
+            [*python, "ruff", "check", SRC, TESTS, "tools", "packaging"],
             "ruff check --fix behebt die meisten Punkte automatisch.",
         ),
         Step(
             "Format",
-            [*python, "ruff", "format", "--check", SRC, TESTS, "tools"],
+            [*python, "ruff", "format", "--check", SRC, TESTS, "tools", "packaging"],
             "ruff format schreibt die Dateien um.",
         ),
         # Vorschau-Regeln, die eine kommende ruff-Fassung fest einschalten wird.
@@ -71,6 +71,7 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
                 SRC,
                 TESTS,
                 "tools",
+                "packaging",
             ],
             "Diese Regeln gelten ab der nächsten ruff-Nebenversion.",
         ),

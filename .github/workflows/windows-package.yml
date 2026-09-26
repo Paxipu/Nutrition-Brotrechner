@@ -1,0 +1,102 @@
+name: Windows-Paket
+
+# Baut Brotrechner.exe samt Kommandozeile als Ordner und prüft das fertige
+# Paket, bevor es hochgeladen wird. Bei einem Versions-Tag (v5.2.0) hängt der
+# Lauf das Paket an das Release dieses Tags.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Paket bauen und prüfen
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Abhängigkeiten
+        run: pip install ".[pdf]" "pyinstaller==6.22.3" "pyinstaller-hooks-contrib==2026.7"
+
+      - name: Version
+        id: version
+        run: |
+          $version = python -c "import brotrechner; print(brotrechner.__version__)"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            Write-Error "Tag $env:GITHUB_REF_NAME passt nicht zur Programmversion $version"
+            exit 1
+          }
+
+      - name: Paket bauen
+        run: pyinstaller packaging/brotrechner.spec --noconfirm --clean
+
+      # Fehlt im Paket eine Schrift, die PDF-Bibliothek oder die
+      # Startdatenbank, scheitert hier der Selbsttest.
+      - name: Kommandozeile prüfen
+        run: |
+          $cli = "dist/Brotrechner/brotrechner-cli.exe"
+          $data = Join-Path $env:RUNNER_TEMP "daten"
+          & $cli --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $cli --data-dir $data info
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $cli --data-dir $data check
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & $cli --data-dir $data selftest --output (Join-Path $env:RUNNER_TEMP "selbsttest")
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Oberfläche startet
+        env:
+          QT_QPA_PLATFORM: offscreen
+          BROTRECHNER_DATA_DIR: ${{ runner.temp }}\oberflaeche
+        run: |
+          $program = Start-Process "dist/Brotrechner/Brotrechner.exe" -PassThru
+          Start-Sleep -Seconds 20
+          $log = Join-Path $env:BROTRECHNER_DATA_DIR "brotrechner.log"
+          if (Test-Path $log) { Get-Content $log }
+          if ($program.HasExited) {
+            Write-Error "Brotrechner.exe hat sich nach dem Start beendet (Code $($program.ExitCode))"
+            exit 1
+          }
+          Stop-Process -Id $program.Id
+          if (-not (Select-String -Path $log -Pattern "startet" -Quiet)) {
+            Write-Error "Kein Startvermerk im Protokoll"
+            exit 1
+          }
+
+      - name: Zip
+        run: |
+          $zip = "Brotrechner-${{ steps.version.outputs.version }}-windows.zip"
+          Compress-Archive -Path dist/Brotrechner -DestinationPath $zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Brotrechner-${{ steps.version.outputs.version }}-windows
+          path: Brotrechner-*-windows.zip
+          if-no-files-found: error
+
+      - name: An das Release hängen
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "Brotrechner-${{ steps.version.outputs.version }}-windows.zip"
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME $zip --clobber
+          } else {
+            gh release create $env:GITHUB_REF_NAME $zip --generate-notes
+          }

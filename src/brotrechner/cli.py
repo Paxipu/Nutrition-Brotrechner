@@ -8,6 +8,7 @@ zu prüfen oder eine Sicherung zu exportieren::
     brotrechner check           # Datenprüfung, Exit-Code 1 bei Fehlern
     brotrechner export-csv out.csv
     brotrechner info            # Pfade und Bestand
+    brotrechner selftest        # Etikett und Bericht eines Beispielbrots
 """
 
 from __future__ import annotations
@@ -15,13 +16,22 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import tempfile
 from pathlib import Path
 
 from brotrechner import __version__, paths
+from brotrechner.core.analysis import RecipeAnalysis, ResolvedItem, analyze
+from brotrechner.core.labeling import build_ingredient_list
+from brotrechner.core.models import Ingredient
 from brotrechner.core.validation import Severity, validate_database
 from brotrechner.data.repository import RepositoryError, load_recipes
-from brotrechner.data.seed import ensure_user_database, load_user_ingredients
-from brotrechner.export import table
+from brotrechner.data.seed import (
+    ensure_user_database,
+    load_seed_ingredients,
+    load_user_ingredients,
+)
+from brotrechner.export import report, table
+from brotrechner.export.label import LabelOptions, render_label
 
 __all__ = ["main", "main_gui"]
 
@@ -58,6 +68,17 @@ def _build_parser() -> argparse.ArgumentParser:
     export.add_argument("target", type=Path, help="Zieldatei.")
 
     sub.add_parser("info", help="Pfade und Bestand anzeigen.")
+
+    selftest = sub.add_parser(
+        "selftest",
+        help="Etikett und PDF-Bericht eines Beispielbrots schreiben - prüft die Installation.",
+    )
+    selftest.add_argument(
+        "--output",
+        type=Path,
+        metavar="ORDNER",
+        help="Zielordner (sonst ein neuer temporärer Ordner).",
+    )
     return parser
 
 
@@ -109,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_check(ingredients, strict=args.strict)
     if command == "export-csv":
         return _run_export_csv(args.target, ingredients)
+    if command == "selftest":
+        return _run_selftest(args.output)
     return _run_info(data_dir, len(ingredients), len(recipes))
 
 
@@ -153,6 +176,49 @@ def _run_check(ingredients: object, *, strict: bool) -> int:
     if strict and warnings:
         return 1
     return 0
+
+
+def _run_selftest(target: Path | None) -> int:
+    """Schreibt Etikett und Bericht eines Beispielbrots aus der Startdatenbank.
+
+    Gedacht für das fertige Programmpaket: Fehlt dort eine Schrift, die
+    PDF-Bibliothek oder die Startdatenbank, scheitert dieser Befehl - ohne dass
+    jemand die Oberfläche bedienen muss.
+    """
+    try:
+        folder = target or Path(tempfile.mkdtemp(prefix="brotrechner-selbsttest-"))
+        folder.mkdir(parents=True, exist_ok=True)
+        analysis = _example_analysis(list(load_seed_ingredients()))
+        listing = build_ingredient_list(analysis.lines, baked_weight_g=analysis.baked_weight_g)
+        options = LabelOptions(
+            title="Selbsttest",
+            net_weight_g=analysis.baked_weight_g,
+            ingredients=tuple(entry.markup for entry in listing.entries),
+        )
+        label = folder / "etikett.png"
+        render_label(analysis.per_100g, options).save(label)
+        print(f"Etikett: {label}")
+        if report.is_available():
+            pdf = report.write_report(folder / "bericht.pdf", analysis, recipe_name="Selbsttest")
+            print(f"Bericht: {pdf}")
+        else:
+            print("Bericht: übersprungen (reportlab fehlt)")
+    except Exception as exc:
+        # Jeder Fehler zählt hier als Befund - genau dafür gibt es den Befehl.
+        print(f"Selbsttest fehlgeschlagen: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _example_analysis(ingredients: list[Ingredient]) -> RecipeAnalysis:
+    """Ein einfaches Weizenbrot aus Mehl, Wasser und Salz der Startdatenbank."""
+    flour = next(i for i in ingredients if i.is_flour and "Weizenmehl" in i.name)
+    water = next(i for i in ingredients if i.name == "Wasser")
+    salt = next(i for i in ingredients if i.name.startswith("Salz"))
+    return analyze(
+        [ResolvedItem(flour, 500.0), ResolvedItem(water, 340.0), ResolvedItem(salt, 10.0)],
+        baked_weight_g=740.0,
+    )
 
 
 def main_gui(argv: list[str] | None = None) -> int:

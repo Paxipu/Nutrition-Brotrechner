@@ -80,6 +80,22 @@ zuletzt gebacken wurde.
 
 ## Starten
 
+**Unter Windows ohne Python.** Das Programmpaket
+`Brotrechner-<Version>-windows.zip` enthält alles, was das Programm braucht –
+auch Python selbst. Entpacken, im Ordner `Brotrechner` auf `Brotrechner.exe`
+doppelklicken, fertig. Es hängt an jedem Release und entsteht bei jedem
+Versions-Tag in GitHub Actions („Windows-Paket“), wo es sich auch von Hand
+starten lässt. Vor dem Hochladen prüft der Lauf das fertige Paket:
+Kommandozeile, Datenprüfung, ein Etikett und ein PDF-Bericht mit
+`brotrechner-cli selftest` und der Start der Oberfläche. Liegt neben
+`Brotrechner.exe` ein Ordner `data`, arbeitet das Programm portabel mit den
+Daten darin. Selbst bauen:
+
+```bash
+pip install ".[pdf]" pyinstaller
+pyinstaller packaging/brotrechner.spec --noconfirm   # Ergebnis in dist/Brotrechner
+```
+
 **Ohne Installation, per Doppelklick.** Im Hauptordner liegt die Datei
 **`Brotrechner starten.pyw`** – Doppelklick genügt. Die Endung `.pyw` ist unter
 Windows mit dem Python-Starter verknüpft, das Programm öffnet also ohne
@@ -143,6 +159,7 @@ brotrechner check                # Datenprüfung, Exit-Code 1 bei Fehlern
 brotrechner check --strict       # auch Warnungen führen zu Exit-Code 1
 brotrechner export-csv out.csv   # Zutatendatenbank als CSV
 brotrechner info                 # Pfade und Bestand
+brotrechner selftest             # Etikett und PDF eines Beispielbrots - prüft die Installation
 brotrechner --data-dir ./daten   # abweichendes Datenverzeichnis
 ```
 
@@ -158,9 +175,10 @@ ein Programmupdate sie nie überschreibt:
 | macOS     | `~/Library/Application Support/Brotrechner`                  |
 
 Zwei Auswege: Die Umgebungsvariable `BROTRECHNER_DATA_DIR` setzt das
-Verzeichnis unabhängig vom System, und ein Ordner `data` neben dem
-Projektverzeichnis schaltet den *portablen Modus* ein – praktisch für den
-Betrieb vom USB-Stick.
+Verzeichnis unabhängig vom System, und ein Ordner `data` schaltet den
+*portablen Modus* ein – praktisch für den Betrieb vom USB-Stick. Beim Start
+aus dem Quelltext liegt er im Projektverzeichnis, im Windows-Paket neben
+`Brotrechner.exe`.
 
 Vor jedem Überschreiben legt das Programm eine Sicherung in `<Daten>/backups`
 an und hält die zehn jüngsten Stände – aber nur, wenn sich der Inhalt wirklich
@@ -202,7 +220,8 @@ src/brotrechner/
 ├── core/        Fachlogik, ohne GUI und ohne Dateizugriff
 │   ├── nutrients.py    Nährwertvektor, Brennwertberechnung
 │   ├── models.py       Zutat, Rezept, Kategorien
-│   ├── analysis.py     Bäckerprozent, Teigausbeute, Kosten
+│   ├── analysis.py     Bäckerprozent, Teigausbeute, Kosten, Stufen
+│   ├── portions.py     Portionen: Nährwerte und Kosten je Scheibe
 │   ├── tolerances.py   EU-Deklarationstoleranzen
 │   ├── reference.py    Referenzmengen und Ampel
 │   └── validation.py   Plausibilitätsprüfung
@@ -210,6 +229,8 @@ src/brotrechner/
 ├── export/      PNG-Etikett, PDF-Bericht, CSV
 └── gui/         Qt-Oberfläche, enthält keine Fachlogik
 ```
+
+Daneben liegt in `packaging/` der Bauplan für das Windows-Paket.
 
 Die Schichten importieren ausschließlich „nach unten“: `gui` → `export`/`data`
 → `core`. Deshalb lässt sich die gesamte Rechnung ohne Qt testen, und `core`

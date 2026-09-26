@@ -51,9 +51,18 @@ SETTINGS_FILE: Final = "settings.json"
 
 
 def _portable_dir() -> Path | None:
-    """Ordner ``data`` neben dem Projektverzeichnis, falls vorhanden."""
-    project_root = Path(__file__).resolve().parents[2]
-    candidate = project_root / "data"
+    """Ordner ``data`` neben dem Programm, falls vorhanden.
+
+    Aus dem Quelltext gestartet liegt er im Projektverzeichnis, im
+    Windows-Paket neben ``Brotrechner.exe``: So lässt sich das Programm samt
+    Daten etwa auf einem USB-Stick mitnehmen. PyInstaller setzt dafür
+    ``sys.frozen``; der Pfad dieser Datei läge dort in den Programmdateien.
+    """
+    if getattr(sys, "frozen", False):
+        base = Path(sys.executable).resolve().parent
+    else:
+        base = Path(__file__).resolve().parents[2]
+    candidate = base / "data"
     return candidate if candidate.is_dir() else None
 
 

@@ -221,6 +221,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   nicht nebeneinander auf das Format, fehlt die Spalte je Portion, und der
   Dialog sagt das. Der Schalter „Nährwerte je Scheibe (45 g)“ im Etikettdialog
   wird gemerkt.
+- **Windows-Programmpaket ohne Python-Installation.** GitHub Actions baut bei
+  jedem Versions-Tag mit PyInstaller den Ordner `Brotrechner` mit
+  `Brotrechner.exe` und `brotrechner-cli.exe` und hängt ihn als Zip an das
+  Release; von Hand lässt sich der Lauf ebenso starten. Vor dem Hochladen
+  wird das fertige Paket geprüft: Kommandozeile, Datenprüfung, der neue
+  Befehl `selftest` - er schreibt Etikett und PDF-Bericht eines Beispielbrots
+  aus der mitgelieferten Datenbank - und der Start der Oberfläche. Ein Ordner
+  `data` neben `Brotrechner.exe` macht das Paket portabel.
 - **Rezeptstufen: Sauerteig, Vorteig, Brühstück, Quellstück, Kochstück,
   Hauptteig.** Jede Zutat gehört zu einer Stufe; gewählt wird sie vor
   „Hinzufügen“, markierte Zeilen verlegt ein Rechtsklick. Dieselbe Zutat darf
