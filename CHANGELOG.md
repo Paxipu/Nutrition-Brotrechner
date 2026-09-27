@@ -114,6 +114,18 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wortlos. Jetzt erscheint eine Meldung mit ausklappbarem Hergang, und alles
   steht in `brotrechner.log` im Datenverzeichnis (rotierend, höchstens rund
   1,5 MB). Auch der Doppelklick-Starter fängt Abstürze ab und meldet sie.
+- **`--data-dir` galt nicht für den Ausgabeordner.** Ohne Dokumentenordner
+  landeten Etiketten, Berichte und CSV-Dateien im Datenverzeichnis des
+  Systems, auch wenn das Programm mit `--data-dir` auf ein anderes gerichtet
+  war - und schon `brotrechner info` legte jenes Verzeichnis nebenbei an.
+  Jetzt gehört der Ausgabeordner zum gewählten Datenverzeichnis; der
+  Dokumentenordner hat weiter Vorrang.
+- **Der Schutz vor tief verschachtelten Importdateien hing an der
+  Python-Version.** Er griff erst, wenn der JSON-Leser an seine
+  Rekursionsgrenze stieß - Python 3.14 liest aber 60 000 Ebenen ohne Fehler.
+  Jetzt wird die Tiefe vor dem Einlesen geprüft: Mehr als 100 Ebenen werden
+  in jeder Version abgewiesen, Klammern in Texten zählen nicht, und auch eine
+  kaputte Datei ist in linearer Zeit durchlaufen.
 - **Das Etikett wurde auf die ganze Druckseite gestreckt.** Ein Etikett von
   70 × 100 mm kam auf A4 rund 200 mm breit aus dem Drucker. Außerdem zählte
   der Druckerrand doppelt, das Etikett saß um den Rand versetzt. Gedruckt wird
@@ -224,11 +236,16 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 - **Windows-Programmpaket ohne Python-Installation.** GitHub Actions baut bei
   jedem Versions-Tag mit PyInstaller den Ordner `Brotrechner` mit
   `Brotrechner.exe` und `brotrechner-cli.exe` und hängt ihn als Zip an das
-  Release; von Hand lässt sich der Lauf ebenso starten. Vor dem Hochladen
-  wird das fertige Paket geprüft: Kommandozeile, Datenprüfung, der neue
-  Befehl `selftest` - er schreibt Etikett und PDF-Bericht eines Beispielbrots
-  aus der mitgelieferten Datenbank - und der Start der Oberfläche. Ein Ordner
-  `data` neben `Brotrechner.exe` macht das Paket portabel.
+  Release; von Hand lässt sich der Lauf ebenso starten. Die CI baut das Paket
+  außerdem bei jedem Pull Request und hält es eine Woche zum Ausprobieren
+  bereit. Jeder Lauf prüft das fertige Paket: Kommandozeile, Datenprüfung,
+  der neue Befehl `selftest` - er muss Etikett und PDF-Bericht eines
+  Beispielbrots aus der mitgelieferten Datenbank schreiben -, das Qt-Plugin
+  für Fenster und der Start der Oberfläche bis „Hauptfenster bereit“ im
+  Protokoll. Dasselbe Skript `packaging/build_windows.ps1` baut und prüft das
+  Paket auch auf dem eigenen Rechner; die Bauwerkzeuge sind in
+  `packaging/requirements.txt` fest versioniert. Ein Ordner `data` neben
+  `Brotrechner.exe` macht das Paket portabel.
 - **Rezeptstufen: Sauerteig, Vorteig, Brühstück, Quellstück, Kochstück,
   Hauptteig.** Jede Zutat gehört zu einer Stufe; gewählt wird sie vor
   „Hinzufügen“, markierte Zeilen verlegt ein Rechtsklick. Dieselbe Zutat darf
@@ -249,7 +266,9 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   lief sie nur unter Linux, obwohl das Programm meist per Doppelklick unter
   Windows startet. Linux prüft alle unterstützten Versionen von 3.10 bis
   3.14, Windows und macOS die älteste und die neueste. Von Hand lässt sich
-  der Lauf jetzt auch für einen Zweig ohne Pull Request starten. Python 3.10
+  der Lauf jetzt auch für einen Zweig ohne Pull Request starten. Die
+  Schwachstellenprüfung schließt die Bauwerkzeuge des Windows-Pakets ein -
+  PyInstaller steckt mit seinem Startprogramm in jedem Paket. Python 3.10
   bleibt unterstützt, erhält aber ab Oktober 2026 keine Sicherheitskorrekturen
   mehr.
 - **Die Testabdeckung schließt die Oberfläche ein.** Bisher war das Paket
