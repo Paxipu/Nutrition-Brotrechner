@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from brotrechner.core.analysis import analyze, resolve_items
+from brotrechner.core.analysis import IngredientLine, RecipeAnalysis, analyze, resolve_items
 from brotrechner.core.models import Ingredient, Recipe
 from brotrechner.gui.models.recipe_model import RecipeListModel
 from brotrechner.gui.theme import SPACING, Tokens
@@ -206,6 +206,7 @@ class RecipesPage(QWidget):
             baked_weight_g=recipe.baked_weight_g,
             dough_weight_g=recipe.dough_weight_g,
             energy_kwh=recipe.energy_kwh,
+            portion=recipe.portion,
         )
         t = self._tokens
 
@@ -238,14 +239,28 @@ class RecipesPage(QWidget):
                 return name
             return f"{name} <span style='color:{t.text_muted}'>({manufacturer})</span>"
 
-        rows = "".join(
-            "<tr><td style='padding:1px 8px 1px 0'>"
-            + ingredient_cell(line.ingredient.name, line.ingredient.manufacturer)
-            + f"</td><td align='right'>{format_number(line.amount_g, 0)} g</td>"
-            + f"<td align='right' style='color:{t.text_muted}'>"
-            + f"{line.baker_percent:.0f} %</td></tr>"
-            for line in analysis.lines
-        )
+        def ingredient_row(line: IngredientLine) -> str:
+            return (
+                "<tr><td style='padding:1px 8px 1px 0'>"
+                + ingredient_cell(line.ingredient.name, line.ingredient.manufacturer)
+                + f"</td><td align='right'>{format_number(line.amount_g, 0)} g</td>"
+                + f"<td align='right' style='color:{t.text_muted}'>"
+                + f"{line.baker_percent:.0f} %</td></tr>"
+            )
+
+        if analysis.has_stages:
+            # Nach Stufen geordnet, jede mit Teigausbeute und Mehlanteil.
+            rows = "".join(
+                "<tr><td colspan='3' style='padding:6px 0 1px 0'>"
+                f"<b>{summary.stage.label}</b> "
+                f"<span style='color:{t.text_muted}'>{summary.ratio_text}</span></td></tr>"
+                + "".join(
+                    ingredient_row(line) for line in analysis.lines if line.stage is summary.stage
+                )
+                for summary in analysis.stages
+            )
+        else:
+            rows = "".join(ingredient_row(line) for line in analysis.lines)
         table = (
             "<p style='margin:10px 0 2px 0'><b>Zutaten</b> "
             f"<span style='color:{t.text_muted}'>(Menge · Bäckerprozent)</span></p>"
@@ -264,6 +279,7 @@ class RecipesPage(QWidget):
                 f"Ballaststoffe {format_number(n.fiber)} g · "
                 f"Salz {format_number(n.salt, 2)} g</p>"
             )
+            nutrition += _portion_html(analysis)
 
         cost = (
             "<p style='margin:12px 0 2px 0'><b>Kosten zu heutigen Preisen</b></p>"
@@ -294,3 +310,17 @@ class RecipesPage(QWidget):
                 f"<p style='margin:0;color:{t.text_muted}'><i>{text}</i></p>"
             )
         return head + history + table + nutrition + cost + warning + notes
+
+
+def _portion_html(analysis: RecipeAnalysis) -> str:
+    """Brennwert und Kosten je Portion, dazu die Zahl der Portionen - ohne Portion nichts."""
+    portion = analysis.portion
+    per_portion = analysis.per_portion
+    if portion is None or per_portion is None:
+        return ""
+    parts = [f"{per_portion.energy_kcal:.0f} kcal"]
+    if analysis.cost_per_portion is not None:
+        parts.append(format_currency(analysis.cost_per_portion))
+    if portion.fits_into(analysis.baked_weight_g):
+        parts.append(f"ergibt {portion.count_text(analysis.baked_weight_g)}")
+    return f"<p style='margin:2px 0 0 0'>Je {escape(portion.title)}: {' · '.join(parts)}</p>"

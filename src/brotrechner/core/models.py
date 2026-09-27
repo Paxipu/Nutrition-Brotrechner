@@ -11,21 +11,25 @@ einen stabilen, normalisierten Schlüssel ab.
 from __future__ import annotations
 
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any, Final
 
+from brotrechner.core.allergens import Allergen, allergen_keys, parse_allergens
 from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.portions import Portion
 
 __all__ = [
     "CATEGORY_LABELS",
+    "STAGE_LABELS",
     "Category",
     "Ingredient",
     "PriceEntry",
     "Recipe",
     "RecipeItem",
     "Source",
+    "Stage",
     "as_aware",
     "normalize_key_part",
 ]
@@ -82,6 +86,50 @@ CATEGORY_LABELS: Final[dict[Category, str]] = {
     Category.DAIRY: "Milchprodukte",
     Category.SPICES: "Gewürze",
     Category.OTHER: "Sonstiges",
+}
+
+
+class Stage(Enum):
+    """Stufe eines Rezepts, in der eine Zutat verarbeitet wird.
+
+    Die Reihenfolge der Mitglieder ist die übliche beim Backen: Vorstufen wie
+    Sauerteig oder Brühstück werden vorher angesetzt, zuletzt der Hauptteig.
+    Der Wert ist der stabile Schlüssel in der JSON-Datei; aus demselben Grund
+    wie bei :class:`Category` keine Ableitung von ``str``.
+    """
+
+    SOURDOUGH = "sourdough"
+    PREFERMENT = "preferment"
+    SCALD = "scald"
+    SOAKER = "soaker"
+    COOKED = "cooked"
+    MAIN = "main"
+
+    @classmethod
+    def parse(cls, value: object) -> Stage:
+        """Liest eine Stufe aus Schlüssel oder Bezeichnung; Unbekanntes ist Hauptteig."""
+        if isinstance(value, cls):
+            return value
+        text = str(value or "").strip().casefold()
+        for member in cls:
+            if text in (member.value, member.label.casefold()):
+                return member
+        return cls.MAIN
+
+    @property
+    def label(self) -> str:
+        """Deutsche Bezeichnung."""
+        return STAGE_LABELS[self]
+
+
+#: Deutsche Bezeichnungen der Stufen.
+STAGE_LABELS: Final[dict[Stage, str]] = {
+    Stage.SOURDOUGH: "Sauerteig",
+    Stage.PREFERMENT: "Vorteig",
+    Stage.SCALD: "Brühstück",
+    Stage.SOAKER: "Quellstück",
+    Stage.COOKED: "Kochstück",
+    Stage.MAIN: "Hauptteig",
 }
 
 
@@ -168,10 +216,11 @@ class Ingredient:
     manufacturer: str = ""
     nutrients: Nutrients = field(default_factory=Nutrients)
 
-    #: Zählt die Zutat bei Bäckerprozent und Teigausbeute als Mehl?
-    #: Früher wurde das über Namens-Schlüsselwörter geraten, was
-    #: "Altbrot (Paniermehl)" und "Sojamehl" fälschlich zu Mehl machte.
-    is_flour: bool = False
+    #: Anteil der Zutat in Prozent, der bei Bäckerprozent und Teigausbeute als
+    #: Mehl zählt: 100 bei Mehl, 0 bei Saaten oder Milch, 50 bei einem
+    #: Anstellgut aus gleichen Teilen Mehl und Wasser (TA 200). Früher gab es
+    #: nur "Mehl ja/nein", und Sauerteig zählte gar nicht zur Mehlmenge.
+    flour_percent: float = 0.0
 
     package_price: float = 0.0
     package_size_g: float = 0.0
@@ -182,6 +231,14 @@ class Ingredient:
     nutrition_source: Source = Source.UNKNOWN
     water_source: Source = Source.ESTIMATED
     notes: str = ""
+
+    #: Bezeichnung im Zutatenverzeichnis, Allergene in ``*Sternchen*``, etwa
+    #: ``*Weizen*mehl Type 550``. Leer heißt: der Name der Zutat.
+    label_name: str = ""
+
+    #: Enthaltene Allergene nach Anhang II. ``None`` heißt "nicht erfasst" -
+    #: das ist etwas anderes als "enthält keine" (leere Menge).
+    allergens: frozenset[Allergen] | None = None
 
     def __post_init__(self) -> None:
         """Normalisiert die Aufzählungsfelder.
@@ -206,6 +263,28 @@ class Ingredient:
     def display_name(self) -> str:
         """Name inklusive Hersteller, wie er in Listen erscheint."""
         return f"{self.name} ({self.manufacturer})" if self.manufacturer else self.name
+
+    @property
+    def list_name(self) -> str:
+        """Bezeichnung im Zutatenverzeichnis, ersatzweise der Name."""
+        return self.label_name.strip() or self.name
+
+    # ── Mehlanteil ────────────────────────────────────────────────────────
+
+    @property
+    def is_flour(self) -> bool:
+        """True bei reinem Mehl, also einem Mehlanteil von 100 %."""
+        return self.flour_percent >= 100.0
+
+    @property
+    def flour_fraction(self) -> float:
+        """Mehlanteil als Bruch, auf 0 bis 1 begrenzt.
+
+        Ein unsinniger Wert in der Datei - etwa 140 % - meldet die Datenprüfung.
+        Die Rechnung selbst soll davon nicht ins Negative oder über die
+        Zutatenmenge hinaus getrieben werden.
+        """
+        return min(1.0, max(0.0, self.flour_percent / 100.0))
 
     # ── Preis ─────────────────────────────────────────────────────────────
 
@@ -267,6 +346,9 @@ class Ingredient:
             "name": self.name,
             "manufacturer": self.manufacturer,
             "category": self.category.value,
+            "flour_percent": self.flour_percent,
+            # Nur noch für Version 5.1 und älter, die den Mehlanteil nicht
+            # kennen: Reines Mehl bleibt dort Mehl, alles andere wie bisher.
             "is_flour": self.is_flour,
         }
         data.update(self.nutrients.to_dict())
@@ -280,6 +362,8 @@ class Ingredient:
                 "water_source": self.water_source.value,
                 "notes": self.notes,
                 "price_history": [e.to_dict() for e in self.price_history],
+                "label_name": self.label_name,
+                "allergens": None if self.allergens is None else allergen_keys(self.allergens),
             }
         )
         return data
@@ -299,7 +383,7 @@ class Ingredient:
             manufacturer=str(data.get("manufacturer") or "").strip(),
             category=Category.parse(data.get("category")),
             nutrients=Nutrients.from_dict(data),
-            is_flour=bool(data.get("is_flour", False)),
+            flour_percent=_flour_percent_from(data),
             package_price=_as_float(data.get("package_price")),
             package_size_g=_as_float(data.get("package_size_g")),
             price_history=[PriceEntry.from_dict(e) for e in data.get("price_history") or []],
@@ -308,6 +392,8 @@ class Ingredient:
             nutrition_source=Source.parse(data.get("nutrition_source")),
             water_source=Source.parse(data.get("water_source")),
             notes=str(data.get("notes") or ""),
+            label_name=str(data.get("label_name") or "").strip(),
+            allergens=parse_allergens(data.get("allergens")),
         )
 
     def copy(self, *, name: str | None = None, manufacturer: str | None = None) -> Ingredient:
@@ -317,7 +403,7 @@ class Ingredient:
             manufacturer=self.manufacturer if manufacturer is None else manufacturer,
             category=self.category,
             nutrients=self.nutrients,
-            is_flour=self.is_flour,
+            flour_percent=self.flour_percent,
             package_price=self.package_price,
             package_size_g=self.package_size_g,
             price_history=list(self.price_history),
@@ -326,6 +412,8 @@ class Ingredient:
             nutrition_source=self.nutrition_source,
             water_source=self.water_source,
             notes=self.notes,
+            label_name=self.label_name,
+            allergens=self.allergens,
         )
 
 
@@ -342,6 +430,9 @@ class RecipeItem:
     name: str
     manufacturer: str
     amount_g: float
+    #: Stufe, in der die Zutat verarbeitet wird; Rezepte älterer Versionen
+    #: kennen nur den Hauptteig.
+    stage: Stage = Stage.MAIN
 
     @property
     def display_name(self) -> str:
@@ -349,7 +440,7 @@ class RecipeItem:
 
     def scaled(self, factor: float) -> RecipeItem:
         """Kopie mit skalierter Menge."""
-        return RecipeItem(self.ingredient_key, self.name, self.manufacturer, self.amount_g * factor)
+        return replace(self, amount_g=self.amount_g * factor)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -357,6 +448,7 @@ class RecipeItem:
             "name": self.name,
             "manufacturer": self.manufacturer,
             "amount_g": self.amount_g,
+            "stage": self.stage.value,
         }
 
     @classmethod
@@ -371,6 +463,7 @@ class RecipeItem:
             name=name,
             manufacturer=manufacturer,
             amount_g=_as_float(data.get("amount_g")),
+            stage=Stage.parse(data.get("stage")),
         )
 
 
@@ -394,6 +487,9 @@ class Recipe:
     last_baked_on: date | None = None
     last_best_before: date | None = None
 
+    #: Portion für die Angaben je Scheibe oder Stück; ``None`` heißt: nur je 100 g.
+    portion: Portion | None = None
+
     @property
     def total_amount_g(self) -> float:
         """Summe aller eingewogenen Zutaten."""
@@ -414,6 +510,8 @@ class Recipe:
             dough_weight_g=self.dough_weight_g * factor,
             energy_kwh=self.energy_kwh,  # Backenergie skaliert nicht linear mit der Menge
             notes=self.notes,
+            # Ein doppeltes Rezept ergibt mehr Scheiben, nicht dickere.
+            portion=self.portion,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -430,6 +528,7 @@ class Recipe:
             "last_best_before": (
                 self.last_best_before.isoformat() if self.last_best_before else None
             ),
+            "portion": self.portion.to_dict() if self.portion else None,
         }
 
     @classmethod
@@ -448,6 +547,7 @@ class Recipe:
             modified_at=_parse_datetime(data.get("modified_at") or data.get("created_at")),
             last_baked_on=_parse_date(data.get("last_baked_on")),
             last_best_before=_parse_date(data.get("last_best_before")),
+            portion=Portion.from_dict(data.get("portion")),
         )
 
 
@@ -462,6 +562,20 @@ def _as_float(value: object) -> float:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Zahlenwert erwartet, war {value!r}") from exc
+
+
+def _flour_percent_from(data: dict[str, Any]) -> float:
+    """Mehlanteil aus einem Zutateneintrag.
+
+    Dateien bis Version 5.1 kennen nur ``is_flour``. Daraus wird 100 oder 0 -
+    genau das Verhalten, mit dem diese Dateien entstanden sind. Ob eine solche
+    Zutat eigentlich ein Sauerteig ist, kann das Modell nicht wissen; das
+    ergänzt die Datenschicht beim Laden aus der Startdatenbank.
+    """
+    raw = data.get("flour_percent")
+    if raw is None or raw == "":
+        return 100.0 if bool(data.get("is_flour", False)) else 0.0
+    return _as_float(raw)
 
 
 def as_aware(moment: datetime) -> datetime:

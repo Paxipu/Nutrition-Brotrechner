@@ -15,13 +15,28 @@ PySide6 durch ``QVariant`` einebnet.
 Deshalb gilt an jeder Qt-Grenze ``==`` statt ``is``. Diese Datei hält die Regel
 an einer Stelle fest; ``test_no_identity_comparison_against_qt_enums`` wacht
 darüber, dass sie im ganzen Paket eingehalten wird.
+
+Außerdem liegen hier die Weichen für Qt-Funktionen, die sich zwischen den
+unterstützten Fassungen (PySide6 ab 6.5) geändert haben.
 """
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QMessageBox
+from collections.abc import Iterator
+from contextlib import contextmanager
+from enum import Enum
+from typing import Final, TypeVar
 
-__all__ = ["confirmed"]
+from PySide6.QtCore import QSortFilterProxyModel
+from PySide6.QtWidgets import QComboBox, QMessageBox
+
+__all__ = ["changing_filter", "confirmed", "enum_or_none", "select_data"]
+
+#: Qt 6.10 ersetzt ``invalidateFilter()`` durch ein Klammerpaar um die
+#: Änderung; die alte Funktion gilt dort als veraltet.
+_HAS_FILTER_CHANGE: Final = hasattr(QSortFilterProxyModel, "endFilterChange")
+
+_E = TypeVar("_E", bound=Enum)
 
 
 def confirmed(
@@ -39,3 +54,43 @@ def confirmed(
         ``True``, wenn der Anwender genau diese Schaltfläche angeklickt hat.
     """
     return int(answer) == int(button)
+
+
+def enum_or_none(kind: type[_E], value: object) -> _E | None:
+    """Das Enum-Mitglied zu einem gemerkten Wert - ``None``, wenn es keins gibt.
+
+    Gemerkte Einstellungen stammen aus einer Datei, die sich von Hand
+    bearbeiten lässt; ein unbekannter Wert darf nichts zum Absturz bringen.
+    """
+    try:
+        return kind(value)
+    except ValueError:
+        return None
+
+
+def select_data(combo: QComboBox, data: object) -> bool:
+    """Wählt den Eintrag mit diesem Datenwert; ``False``, wenn es ihn nicht gibt."""
+    index = combo.findData(data)
+    if index < 0:
+        return False
+    combo.setCurrentIndex(index)
+    return True
+
+
+@contextmanager
+def changing_filter(proxy: QSortFilterProxyModel) -> Iterator[None]:
+    """Klammert eine Änderung der Filterkriterien eines Proxys.
+
+    Ab Qt 6.10 mit ``beginFilterChange``/``endFilterChange``, davor mit
+    ``invalidateFilter``. So filtert der Proxy danach neu, ohne dass die neue
+    Fassung eine Warnung wegen einer veralteten Funktion ausgibt.
+    """
+    if _HAS_FILTER_CHANGE:
+        proxy.beginFilterChange()
+        try:
+            yield
+        finally:
+            proxy.endFilterChange(QSortFilterProxyModel.Direction.Rows)
+    else:  # pragma: no cover - nur mit Qt vor 6.10
+        yield
+        proxy.invalidateFilter()

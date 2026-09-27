@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import tempfile
+import time
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from brotrechner.core.models import Ingredient, Recipe, RecipeItem
 from brotrechner.data.repository import (
+    MAX_JSON_NESTING,
     SCHEMA_VERSION,
     IngredientStore,
     RecipeStore,
@@ -20,6 +25,9 @@ from brotrechner.data.repository import (
     save_recipes,
     write_json_atomic,
 )
+
+#: Zeichen, an denen sich eine Zählung der Klammern verschlucken kann.
+_TRICKY = '[]{}"\\ x\n'
 
 
 class TestIngredientStore:
@@ -196,6 +204,75 @@ class TestReadJson:
         evil.write_text("[" * 60_000 + "]" * 60_000, encoding="utf-8")
         with pytest.raises(RepositoryError, match="verschachtelt"):
             read_json(evil)
+
+    def test_the_nesting_limit_does_not_depend_on_python(self, tmp_path: Path) -> None:
+        """Python 3.14.7 liest 60 000 Ebenen ohne Rekursionsfehler - abgewiesen wird trotzdem.
+
+        Der Schutz hing bisher am ``RecursionError`` des JSON-Lesers, und der
+        tritt je nach Interpreter früher, später oder gar nicht auf.
+        """
+        allowed = tmp_path / "grenze.json"
+        allowed.write_text("[" * MAX_JSON_NESTING + "]" * MAX_JSON_NESTING, encoding="utf-8")
+        assert read_json(allowed) is not None
+        # Das Objekt ist eine Ebene, die Listen darin sind die übrigen.
+        too_deep = tmp_path / "zu_tief.json"
+        lists = "[" * MAX_JSON_NESTING + "]" * MAX_JSON_NESTING
+        too_deep.write_text('{"a": ' + lists + "}", encoding="utf-8")
+        with pytest.raises(RepositoryError, match=f"mehr als {MAX_JSON_NESTING} Ebenen"):
+            read_json(too_deep)
+
+    def test_brackets_in_text_do_not_count(self, tmp_path: Path) -> None:
+        """Klammern in Zeichenketten zählen nicht.
+
+        ``\\"`` beendet eine Zeichenkette nicht, ``\\\\"`` dagegen schon - wer
+        das verwechselt, hält die Klammern in ``rest`` für Verschachtelung.
+        """
+        many = "[" * (MAX_JSON_NESTING * 5)
+        data = {
+            "name": "[{" * MAX_JSON_NESTING,
+            "notiz": f'" {many} "\\',
+            "pfad": "\\",
+            "rest": many,
+        }
+        path = tmp_path / "text.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        assert read_json(path) == data
+
+    @given(
+        data=st.recursive(
+            st.none()
+            | st.booleans()
+            | st.integers()
+            | st.floats(allow_nan=False)
+            | st.text(alphabet=_TRICKY)
+            | st.text(),
+            lambda inner: (
+                st.lists(inner, max_size=4)
+                | st.dictionaries(st.text(alphabet=_TRICKY), inner, max_size=4)
+            ),
+            max_leaves=30,
+        ),
+        ascii_only=st.booleans(),
+    )
+    def test_everything_below_the_limit_is_read_back(self, data: object, ascii_only: bool) -> None:
+        """Was die eigenen Dateien enthalten können, kommt unverändert zurück."""
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "daten.json"
+            path.write_text(json.dumps(data, ensure_ascii=ascii_only, indent=2), encoding="utf-8")
+            assert read_json(path) == data
+
+    def test_an_unfinished_text_is_scanned_quickly(self, tmp_path: Path) -> None:
+        """Eine offene Zeichenkette voller ``\\"``.
+
+        Ein Muster, das Zeichenketten naiv erkennt, braucht dafür Rechenzeit im
+        Quadrat der Länge - hier gut eine halbe Minute statt Millisekunden.
+        """
+        broken = tmp_path / "offen.json"
+        broken.write_text('["' + '\\"' * 50_000, encoding="utf-8")
+        start = time.perf_counter()
+        with pytest.raises(RepositoryError, match="kein gültiges JSON"):
+            read_json(broken)
+        assert time.perf_counter() - start < 2
 
     def test_broken_json_names_the_line(self, tmp_path: Path) -> None:
         broken = tmp_path / "kaputt.json"

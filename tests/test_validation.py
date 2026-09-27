@@ -11,6 +11,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from brotrechner.core.allergens import Allergen
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.nutrients import Nutrients
 from brotrechner.core.validation import (
@@ -45,9 +46,13 @@ def clean_flour(**overrides: object) -> Ingredient:
         "name": "Roggenvollkornmehl",
         "category": Category.FLOUR,
         "nutrients": nutrients,
-        "is_flour": True,
+        "flour_percent": 100.0,
         "package_price": 1.98,
         "package_size_g": 1000,
+        # Zu einer einwandfreien Zutat gehören erfasste Allergene samt
+        # Hervorhebung - ohne sie meldet die Prüfung einen Hinweis.
+        "label_name": "*Roggen*vollkornmehl",
+        "allergens": frozenset({Allergen.RYE}),
     }
     defaults.update(overrides)
     return Ingredient(**defaults)  # type: ignore[arg-type]
@@ -172,6 +177,15 @@ class TestNegativeAndExtremes:
     def test_negative_value(self) -> None:
         assert "negative" in codes(clean_flour(nutrients=Nutrients(fat=-1.0)))
 
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_a_value_that_is_no_number_is_an_error(self, value: float) -> None:
+        """NaN rutschte durch jede Prüfung: Alle Vergleiche damit sind falsch."""
+        findings = validate_ingredient(clean_flour(nutrients=Nutrients(fat=value)))
+        hits = [f for f in findings if f.code == "not_finite"]
+        assert hits, [f.code for f in findings]
+        assert hits[0].severity is Severity.ERROR
+        assert hits[0].field == "fat"
+
     def test_salt_above_one_hundred(self) -> None:
         item = Ingredient(name="Merkwürdig", nutrients=Nutrients(salt=150.0))
         assert "salt_range" in codes(item)
@@ -183,6 +197,7 @@ class TestNegativeAndExtremes:
             nutrients=Nutrients(salt=100.0),
             package_price=0.19,
             package_size_g=500,
+            allergens=frozenset(),
         )
         assert validate_ingredient(item) == []
 
@@ -272,3 +287,30 @@ class TestProperties:
             f.code == "water" and f.severity is Severity.ERROR for f in validate_ingredient(item)
         )
         assert has_error == (water > 100.0)
+
+    @given(
+        st.builds(
+            Nutrients,
+            energy_kcal=st.floats(),
+            fat=st.floats(),
+            saturated_fat=st.floats(),
+            carbs=st.floats(),
+            sugar=st.floats(),
+            protein=st.floats(),
+            salt=st.floats(),
+            fiber=st.floats(),
+            water=st.floats(),
+        ),
+        st.floats(),
+    )
+    def test_validation_never_raises_on_any_float(
+        self, nutrients: Nutrients, flour_percent: float
+    ) -> None:
+        """Wirklich jeder Wert: NaN, unendlich, riesig, negativ.
+
+        Solche Zahlen kommen aus fremden Importdateien. Die Prüfung läuft bei
+        jeder Änderung über die ganze Datenbank - bräche sie ab, stünde das
+        Programm still.
+        """
+        item = Ingredient(name="Zufall", nutrients=nutrients, flour_percent=flour_percent)
+        validate_database([item])

@@ -14,6 +14,8 @@ Aufruf::
 from __future__ import annotations
 
 import argparse
+import io
+import os
 import re
 import subprocess
 import sys
@@ -47,12 +49,12 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
     steps = [
         Step(
             "Lint",
-            [*python, "ruff", "check", SRC, TESTS, "tools"],
+            [*python, "ruff", "check", SRC, TESTS, "tools", "packaging"],
             "ruff check --fix behebt die meisten Punkte automatisch.",
         ),
         Step(
             "Format",
-            [*python, "ruff", "format", "--check", SRC, TESTS, "tools"],
+            [*python, "ruff", "format", "--check", SRC, TESTS, "tools", "packaging"],
             "ruff format schreibt die Dateien um.",
         ),
         # Vorschau-Regeln, die eine kommende ruff-Fassung fest einschalten wird.
@@ -71,6 +73,7 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
                 SRC,
                 TESTS,
                 "tools",
+                "packaging",
             ],
             "Diese Regeln gelten ab der nächsten ruff-Nebenversion.",
         ),
@@ -101,10 +104,21 @@ def build_steps(*, fast: bool, audit: bool) -> list[Step]:
         # Paketbestand des Systems bewertet - dessen Befunde haben mit diesem
         # Projekt nichts zu tun und würden das Tor dauerhaft rot färben.
         steps.append(
+            # Auch die Bauwerkzeuge: PyInstaller steckt mit seinem
+            # Startprogramm in jedem ausgelieferten Windows-Paket.
             Step(
                 "Abhängigkeiten",
-                [*python, "pip_audit", "--progress-spinner", "off", "-r", _requirements_file()],
-                "Betroffene Untergrenze in pyproject.toml anheben.",
+                [
+                    *python,
+                    "pip_audit",
+                    "--progress-spinner",
+                    "off",
+                    "-r",
+                    _requirements_file(),
+                    "-r",
+                    str(ROOT / "packaging" / "requirements.txt"),
+                ],
+                "Betroffene Untergrenze in pyproject.toml oder packaging/requirements.txt anheben.",
             )
         )
     return steps
@@ -133,6 +147,22 @@ def _requirements_file() -> str:
     return str(target)
 
 
+def _utf8_output() -> dict[str, str]:
+    """Stellt die Ausgabe auf UTF-8 um und liefert die Umgebung für die Prüfschritte.
+
+    Unter Windows schreibt Python in eine Pipe oder Datei in der ANSI-Codepage
+    (cp1252), die „─“ nicht kennt - die CI brach daran mit UnicodeEncodeError
+    ab. Die Prüfschritte schreiben in dieselbe Ausgabe und bekommen deshalb
+    dieselbe Kodierung. Bewusst nur für die Ein- und Ausgabe und nicht als
+    UTF-8-Modus: Die Tests sollen weiterhin auffallen, wenn irgendwo eine
+    Datei ohne ``encoding=`` geöffnet wird.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
+    return {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+
 def main() -> int:
     """Führt alle Schritte aus und meldet eine Zusammenfassung."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -140,11 +170,12 @@ def main() -> int:
     parser.add_argument("--audit", action="store_true", help="Zusätzlich pip-audit ausführen.")
     args = parser.parse_args()
 
+    env = _utf8_output()
     results: list[tuple[Step, bool]] = []
     for step in build_steps(fast=args.fast, audit=args.audit):
         print(f"\n\033[1m── {step.name} " + "─" * max(0, 60 - len(step.name)) + "\033[0m")
-        print(f"$ {' '.join(step.command)}\n")
-        completed = subprocess.run(step.command, cwd=ROOT, check=False)
+        print(f"$ {' '.join(step.command)}\n", flush=True)
+        completed = subprocess.run(step.command, cwd=ROOT, check=False, env=env)
         results.append((step, completed.returncode == 0))
 
     print("\n" + "═" * 64)

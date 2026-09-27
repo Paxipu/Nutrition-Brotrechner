@@ -12,6 +12,7 @@ Geprüft wird:
 ============  ==============================================================
 Code          Bedeutung
 ============  ==============================================================
+``not_finite``  Ein Nährwert ist keine endliche Zahl (NaN, unendlich).
 ``negative``  Ein Nährwert ist negativ.
 ``sat_gt_fat``  Gesättigte Fettsäuren übersteigen das Gesamtfett.
 ``sugar_gt_carbs``  Zucker übersteigt die Kohlenhydrate.
@@ -19,15 +20,23 @@ Code          Bedeutung
 ``energy``    Brennwert passt nicht zu den Makronährstoffen (Anhang XIV).
 ``water``     Wassergehalt außerhalb des für die Kategorie plausiblen Bereichs.
 ``salt_range``  Salzgehalt über 100 g/100 g.
+``flour_range``  Mehlanteil außerhalb von 0 bis 100 %.
 ``price_missing``  Kein Preis hinterlegt.
 ``price_inconsistent``  Preis ohne Packungsgröße.
 ``name_manufacturer``  Herstellername steckt noch im Zutatennamen.
+``label_markup``  Nicht geschlossenes ``*`` in der Bezeichnung für das
+              Zutatenverzeichnis.
+``allergen_emphasis``  Allergene erfasst, aber in der Bezeichnung nicht
+              hervorgehoben.
+``emphasis_without_allergen``  Hervorhebung ohne erfasstes Allergen.
+``allergens_unknown``  Allergene nicht erfasst (Hinweis).
 ``duplicate``  Zwei Zutaten mit identischem Schlüssel.
 ============  ==============================================================
 """
 
 from __future__ import annotations
 
+import math
 import re
 from collections import defaultdict
 from collections.abc import Iterable
@@ -35,8 +44,11 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+from brotrechner.core.allergens import Allergen
+from brotrechner.core.labeling import has_emphasis, has_unmatched_mark
 from brotrechner.core.models import Category, Ingredient
-from brotrechner.core.nutrients import Nutrients, energy_from_macros
+from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients, energy_from_macros
+from brotrechner.i18n import format_number
 
 __all__ = [
     "KNOWN_MANUFACTURERS",
@@ -173,17 +185,13 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
             )
         )
 
-    for name in (
-        "energy_kcal",
-        "fat",
-        "saturated_fat",
-        "carbs",
-        "sugar",
-        "protein",
-        "salt",
-        "fiber",
-        "water",
-    ):
+    broken = _non_finite_findings(ingredient)
+    if broken:
+        # Mit NaN ist jeder Vergleich falsch, mit unendlich scheitert das
+        # Runden - alle weiteren Prüfungen wären Unsinn oder würden abbrechen.
+        return broken
+
+    for name in NUTRIENT_FIELDS:
         value = getattr(n, name)
         if value < 0:
             add(name, "negative", Severity.ERROR, f"{name} ist negativ ({value:g})", 0.0)
@@ -218,13 +226,23 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
     if n.water > 100.0:
         add("water", "water", Severity.ERROR, f"Wassergehalt über 100 % ({n.water:g})", 100.0)
 
+    if not 0.0 <= ingredient.flour_percent <= 100.0:
+        add(
+            "flour_percent",
+            "flour_range",
+            Severity.ERROR,
+            f"Mehlanteil {_decimal(ingredient.flour_percent)} % liegt außerhalb von 0 bis 100 %",
+            min(100.0, max(0.0, ingredient.flour_percent)),
+        )
+
     mass = n.mass_sum
     if mass > _MASS_BALANCE_LIMIT:
         add(
             "water",
             "mass_balance",
             Severity.ERROR,
-            f"Massenbilanz verletzt: Fett+KH+Eiweiß+Ballaststoffe+Salz+Wasser = {mass:.1f} g "
+            "Massenbilanz verletzt: Fett+KH+Eiweiß+Ballaststoffe+Salz+Wasser = "
+            f"{format_number(mass, 1)} g "
             f"je 100 g",
             max(0.0, n.water - (mass - 100.0)),
         )
@@ -238,7 +256,8 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
             Severity.WARNING,
             f"Brennwert {n.energy_kcal:g} kcal passt nicht zu den Nährstoffen "
             f"(berechnet {computed:.0f} kcal nach Anhang XIV)",
-            round(computed),
+            # Bei absurd großen Werten läuft schon die Rechnung über.
+            round(computed) if math.isfinite(computed) else None,
         )
 
     low, high = PLAUSIBLE_WATER_RANGES[ingredient.category]
@@ -271,8 +290,84 @@ def validate_ingredient(ingredient: Ingredient) -> list[Finding]:
                 f"Hersteller {text!r} steckt im Namen und gehört ins Hersteller-Feld",
             )
 
+    findings.extend(_labeling_findings(ingredient))
     findings.sort(key=lambda f: -f.severity.rank)
     return findings
+
+
+def _labeling_findings(ingredient: Ingredient) -> list[Finding]:
+    """Allergene und ihre Hervorhebung im Zutatenverzeichnis.
+
+    Ohne Hervorhebung druckt das Etikett die ganze Bezeichnung einer
+    allergenhaltigen Zutat fett - rechtlich ausreichend, aber es fällt auf und
+    soll deshalb bewusst so gewollt sein.
+    """
+
+    def finding(field: str, code: str, severity: Severity, message: str) -> Finding:
+        return Finding(ingredient.key, ingredient.display_name, field, code, severity, message)
+
+    label = ingredient.label_name
+    allergens = ingredient.allergens
+    if has_unmatched_mark(label):
+        return [
+            finding(
+                "label_name",
+                "label_markup",
+                Severity.ERROR,
+                f"Nicht geschlossenes Sternchen in der Bezeichnung {label!r}",
+            )
+        ]
+    if allergens is None:
+        return [
+            finding(
+                "allergens",
+                "allergens_unknown",
+                Severity.INFO,
+                "Allergene nicht erfasst - für ein Verkaufsetikett nötig",
+            )
+        ]
+    if allergens and not has_emphasis(label):
+        names = ", ".join(a.label for a in sorted(allergens, key=list(Allergen).index))
+        return [
+            finding(
+                "label_name",
+                "allergen_emphasis",
+                Severity.WARNING,
+                f"Enthält {names}, aber nichts ist in der Bezeichnung hervorgehoben "
+                f"(z. B. *Weizen*mehl); das Etikett druckt sie deshalb ganz fett",
+            )
+        ]
+    if not allergens and has_emphasis(label):
+        return [
+            finding(
+                "allergens",
+                "emphasis_without_allergen",
+                Severity.WARNING,
+                f"Hervorhebung in {label!r}, aber kein Allergen erfasst",
+            )
+        ]
+    return []
+
+
+def _non_finite_findings(ingredient: Ingredient) -> list[Finding]:
+    """Befunde für Nährwerte, die keine endliche Zahl sind (NaN, unendlich).
+
+    Solche Werte kommen nie aus der Oberfläche, wohl aber aus fremden
+    Importdateien, denn Pythons JSON-Leser akzeptiert ``NaN`` und ``Infinity``.
+    """
+    n = ingredient.nutrients
+    return [
+        Finding(
+            ingredient.key,
+            ingredient.display_name,
+            name,
+            "not_finite",
+            Severity.ERROR,
+            f"{name} ist keine Zahl ({getattr(n, name)})",
+        )
+        for name in NUTRIENT_FIELDS
+        if not math.isfinite(getattr(n, name))
+    ]
 
 
 def validate_database(ingredients: Iterable[Ingredient]) -> list[Finding]:
@@ -311,3 +406,8 @@ def validate_database(ingredients: Iterable[Ingredient]) -> list[Finding]:
 
     findings.sort(key=lambda f: (-f.severity.rank, f.display_name.casefold(), f.field))
     return findings
+
+
+def _decimal(value: float) -> str:
+    """Zahl so knapp wie nötig und mit Komma: 150 bleibt "150", 100,5 wird "100,5"."""
+    return f"{value:g}".replace(".", ",")

@@ -3,19 +3,23 @@
 Neu gegenüber der Vorversion:
 
 * **Hersteller als eigenes Feld** mit Vorschlagsliste aus dem Bestand.
-* **„Zählt als Mehl“** ist eine Ankreuzoption statt einer versteckten
-  Namensheuristik.
+* **Mehlanteil** in Prozent statt einer versteckten Namensheuristik: 100 %
+  bei Mehl, 50 % bei einem Anstellgut mit TA 200.
 * **Sofortige Plausibilitätsprüfung**: Unter den Eingaben steht laufend, ob
   Massenbilanz und Brennwert zusammenpassen - der Fehler fällt beim Eintippen
   auf und nicht erst Wochen später in der Auswertung.
 * **Preisherkunft und -stand** werden mitgeführt, damit später nachvollziehbar
   bleibt, woher eine Zahl stammt.
+* **Kennzeichnung**: Bezeichnung im Zutatenverzeichnis mit hervorgehobenen
+  Allergenen und die Allergene selbst nach Anhang II - mit ausdrücklichem
+  Haken "geprüft", denn "nicht erfasst" ist nicht dasselbe wie "keine".
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
+from html import escape
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
@@ -27,6 +31,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -35,6 +40,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from brotrechner.core.allergens import ALLERGEN_GROUPS, Allergen
+from brotrechner.core.labeling import list_runs
 from brotrechner.core.models import Category, Ingredient, Source
 from brotrechner.core.nutrients import Nutrients, energy_from_macros
 from brotrechner.core.validation import Severity, validate_ingredient
@@ -88,7 +95,7 @@ class IngredientDialog(QDialog):
         self._taken = {k for k in taken_keys if ingredient is None or k != ingredient.key}
 
         self.setWindowTitle("Zutat bearbeiten" if ingredient else "Neue Zutat")
-        self.setMinimumWidth(620)
+        self.setMinimumWidth(980)
 
         self._build_ui(known_manufacturers)
         source = ingredient or template
@@ -101,6 +108,18 @@ class IngredientDialog(QDialog):
     def _build_ui(self, known_manufacturers: Sequence[str]) -> None:
         layout = QVBoxLayout(self)
         layout.setSpacing(SPACING["md"])
+
+        # Zwei Spalten: Mit der Kennzeichnung wäre eine einzige Spalte auf einem
+        # Laptopbildschirm höher als der Bildschirm.
+        columns = QHBoxLayout()
+        columns.setSpacing(SPACING["md"])
+        left = QVBoxLayout()
+        left.setSpacing(SPACING["md"])
+        right = QVBoxLayout()
+        right.setSpacing(SPACING["md"])
+        columns.addLayout(left, 1)
+        columns.addLayout(right, 1)
+        layout.addLayout(columns)
 
         # Stammdaten
         base_card = Card("Bezeichnung")
@@ -127,14 +146,24 @@ class IngredientDialog(QDialog):
             self.cmb_category.addItem(category.label, category)
         form.addRow("Kategorie", self.cmb_category)
 
-        self.chk_flour = QCheckBox("Zählt beim Bäckerprozent als Mehl")
-        self.chk_flour.setToolTip(
-            "Bestimmt, ob die Zutat zur Mehlmenge zählt, auf die sich Bäckerprozent\n"
-            "und Teigausbeute beziehen. Paniermehl etwa zählt nicht dazu."
+        self.spin_flour = QDoubleSpinBox()
+        self.spin_flour.setRange(0.0, 100.0)
+        self.spin_flour.setDecimals(1)
+        self.spin_flour.setSingleStep(5.0)
+        self.spin_flour.setSuffix(" %")
+        self.spin_flour.setToolTip(
+            "Anteil der Zutat, der beim Bäckerprozent und bei der Teigausbeute als\n"
+            "Mehl zählt: 100 % bei Mehl, 0 % bei Saaten, Milch oder Paniermehl.\n"
+            "Sauerteig und Vorteige: 100 / TA × 100 - also 50 % bei TA 200."
         )
-        form.addRow("", self.chk_flour)
+        self.lbl_flour_hint = QLabel()
+        self.lbl_flour_hint.setObjectName("Muted")
+        flour_row = QHBoxLayout()
+        flour_row.addWidget(self.spin_flour)
+        flour_row.addWidget(self.lbl_flour_hint, 1)
+        form.addRow("Mehlanteil", flour_row)
         base_card.body.addLayout(form)
-        layout.addWidget(base_card)
+        left.addWidget(base_card)
 
         # Nährwerte
         nutrition_card = Card("Nährwerte je 100 g")
@@ -162,7 +191,7 @@ class IngredientDialog(QDialog):
         self.lbl_energy_hint.setWordWrap(True)
         self.btn_apply_energy = QLabel()
         nutrition_card.add_widget(self.lbl_energy_hint)
-        layout.addWidget(nutrition_card)
+        left.addWidget(nutrition_card)
 
         # Preis
         price_card = Card("Preis")
@@ -188,25 +217,33 @@ class IngredientDialog(QDialog):
         self.date_price.setCalendarPopup(True)
         self.date_price.setDisplayFormat("dd.MM.yyyy")
         self.date_price.setDate(QDate.currentDate())
+        # In der halben Dialogbreite würde das Datum sonst abgeschnitten.
+        self.date_price.setMinimumWidth(
+            self.date_price.fontMetrics().horizontalAdvance("00.00.0000") + 48
+        )
 
+        self.lbl_unit_price = QLabel()
+        self.lbl_unit_price.setObjectName("Muted")
+        self.lbl_unit_price.setWordWrap(True)
+
+        # Die Preisquelle ist oft ein ganzer Satz und bekommt deshalb eine eigene
+        # Zeile; der Preisstand teilt sich seine mit dem Preis je Kilogramm.
         price_form.addWidget(QLabel("Packungspreis"), 0, 0)
         price_form.addWidget(self.spin_price, 0, 1)
         price_form.addWidget(QLabel("Packungsgröße"), 0, 2)
         price_form.addWidget(self.spin_size, 0, 3)
         price_form.addWidget(QLabel("Preisquelle"), 1, 0)
-        price_form.addWidget(self.txt_price_source, 1, 1)
-        price_form.addWidget(QLabel("Preisstand"), 1, 2)
-        price_form.addWidget(self.date_price, 1, 3)
+        price_form.addWidget(self.txt_price_source, 1, 1, 1, 3)
+        price_form.addWidget(QLabel("Preisstand"), 2, 0)
+        price_form.addWidget(self.date_price, 2, 1)
+        price_form.addWidget(self.lbl_unit_price, 2, 2, 1, 2)
         price_form.setColumnStretch(1, 1)
         price_form.setColumnStretch(3, 1)
         price_card.body.addLayout(price_form)
-
-        self.lbl_unit_price = QLabel()
-        self.lbl_unit_price.setObjectName("Muted")
-        price_card.add_widget(self.lbl_unit_price)
         self.spin_price.valueChanged.connect(self._update_hints)
         self.spin_size.valueChanged.connect(self._update_hints)
-        layout.addWidget(price_card)
+        left.addWidget(price_card)
+        left.addStretch(1)
 
         # Notizen
         notes_card = Card("Notiz")
@@ -214,7 +251,9 @@ class IngredientDialog(QDialog):
         self.txt_notes.setPlaceholderText("Woher stammen die Werte? Besonderheiten des Produkts?")
         self.txt_notes.setFixedHeight(64)
         notes_card.add_widget(self.txt_notes)
-        layout.addWidget(notes_card)
+        right.addWidget(self._build_labeling_card())
+        right.addWidget(notes_card)
+        right.addStretch(1)
 
         # Befunde
         self.lbl_findings = QLabel()
@@ -234,8 +273,85 @@ class IngredientDialog(QDialog):
         layout.addWidget(buttons)
 
         self.txt_name.textChanged.connect(self._update_hints)
+        self.txt_label_name.textChanged.connect(self._update_hints)
+        self.chk_allergens_checked.toggled.connect(self._update_hints)
         self.cmb_manufacturer.currentTextChanged.connect(self._update_hints)
         self.cmb_category.currentIndexChanged.connect(self._update_hints)
+        self.spin_flour.valueChanged.connect(self._update_hints)
+
+    def _build_labeling_card(self) -> Card:
+        """Bezeichnung im Zutatenverzeichnis und Allergene nach Anhang II."""
+        card = Card("Kennzeichnung")
+
+        self.txt_label_name = QLineEdit()
+        self.txt_label_name.setToolTip(
+            "So steht die Zutat im Zutatenverzeichnis des Etiketts. Allergene in\n"
+            "*Sternchen* setzen, dann erscheinen sie fett: *Weizen*mehl Type 550.\n"
+            "Zusammengesetzte Zutaten mit ihren Bestandteilen in Klammern:\n"
+            "Roggensauerteig (*Roggen*vollkornmehl, Wasser)."
+        )
+        card.add_widget(QLabel("Im Zutatenverzeichnis"))
+        card.add_widget(self.txt_label_name)
+        self.lbl_label_preview = QLabel()
+        self.lbl_label_preview.setObjectName("Muted")
+        self.lbl_label_preview.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_label_preview.setWordWrap(True)
+        card.add_widget(self.lbl_label_preview)
+
+        self.chk_allergens_checked = QCheckBox("Allergene geprüft")
+        self.chk_allergens_checked.setToolTip(
+            "Erst nach einem Blick auf die Packung ankreuzen. Ohne Haken gilt die\n"
+            "Zutat als nicht erfasst - das Verkaufsetikett weist darauf hin."
+        )
+        card.add_widget(self.chk_allergens_checked)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(SPACING["md"])
+        grid.setVerticalSpacing(SPACING["xs"])
+        self.allergen_boxes: dict[Allergen, QCheckBox] = {}
+        row = 0
+        singles: list[tuple[str, Allergen]] = []
+        for group, members in ALLERGEN_GROUPS:
+            if len(members) == 1:
+                singles.append((group, members[0]))
+                continue
+            row = self._add_allergen_group(grid, row, group, [(m.label, m) for m in members])
+        self._add_allergen_group(
+            grid, row, "Weitere", [(member.label, member) for _, member in singles]
+        )
+        card.body.addLayout(grid)
+        return card
+
+    def _add_allergen_group(
+        self,
+        grid: QGridLayout,
+        row: int,
+        title: str,
+        members: Sequence[tuple[str, Allergen]],
+    ) -> int:
+        """Überschrift und Ankreuzfelder einer Allergengruppe; gibt die nächste Zeile zurück."""
+        caption = QLabel(title)
+        caption.setObjectName("Muted")
+        grid.addWidget(caption, row, 0, 1, 3)
+        row += 1
+        for index, (text, allergen) in enumerate(members):
+            box = QCheckBox(text)
+            box.setToolTip(allergen.group)
+            box.toggled.connect(self._on_allergen_toggled)
+            self.allergen_boxes[allergen] = box
+            grid.addWidget(box, row + index // 3, index % 3)
+        return row + (len(members) + 2) // 3
+
+    def _on_allergen_toggled(self, checked: bool) -> None:
+        """Wer ein Allergen ankreuzt, hat die Zutat geprüft."""
+        if checked:
+            self.chk_allergens_checked.setChecked(True)
+        self._update_hints()
+
+    def _current_allergens(self) -> frozenset[Allergen] | None:
+        if not self.chk_allergens_checked.isChecked():
+            return None
+        return frozenset(a for a, box in self.allergen_boxes.items() if box.isChecked())
 
     # ── Befüllen und Auslesen ─────────────────────────────────────────────
 
@@ -245,7 +361,7 @@ class IngredientDialog(QDialog):
         index = self.cmb_category.findData(ingredient.category)
         if index >= 0:
             self.cmb_category.setCurrentIndex(index)
-        self.chk_flour.setChecked(ingredient.is_flour)
+        self.spin_flour.setValue(ingredient.flour_percent)
 
         for field, spin in self._spins.items():
             spin.setValue(float(getattr(ingredient.nutrients, field)))
@@ -257,6 +373,10 @@ class IngredientDialog(QDialog):
             stand = ingredient.price_updated
             self.date_price.setDate(QDate(stand.year, stand.month, stand.day))
         self.txt_notes.setPlainText(ingredient.notes)
+        self.txt_label_name.setText(ingredient.label_name)
+        for allergen, box in self.allergen_boxes.items():
+            box.setChecked(ingredient.allergens is not None and allergen in ingredient.allergens)
+        self.chk_allergens_checked.setChecked(ingredient.allergens is not None)
 
     def _current_nutrients(self) -> Nutrients:
         return Nutrients(**{field: spin.value() for field, spin in self._spins.items()})
@@ -269,7 +389,7 @@ class IngredientDialog(QDialog):
             manufacturer=self.cmb_manufacturer.currentText().strip(),
             category=category,
             nutrients=self._current_nutrients(),
-            is_flour=self.chk_flour.isChecked(),
+            flour_percent=self.spin_flour.value(),
             package_price=self.spin_price.value(),
             package_size_g=self.spin_size.value(),
             price_source=self.txt_price_source.text().strip(),
@@ -279,6 +399,8 @@ class IngredientDialog(QDialog):
             ),
             water_source=Source.ESTIMATED,
             notes=self.txt_notes.toPlainText().strip(),
+            label_name=self.txt_label_name.text().strip(),
+            allergens=self._current_allergens(),
         )
 
     def _price_date(self) -> date:
@@ -305,8 +427,10 @@ class IngredientDialog(QDialog):
         target.manufacturer = built.manufacturer
         target.category = built.category
         target.nutrients = built.nutrients
-        target.is_flour = built.is_flour
+        target.flour_percent = built.flour_percent
         target.notes = built.notes
+        target.label_name = built.label_name
+        target.allergens = built.allergens
         target.update_price(
             built.package_price,
             built.package_size_g,
@@ -318,7 +442,9 @@ class IngredientDialog(QDialog):
     # ── Rückmeldung ───────────────────────────────────────────────────────
 
     def _update_hints(self) -> None:
-        """Aktualisiert Brennwert-, Preis- und Befundzeile."""
+        """Aktualisiert Mehlanteil-, Brennwert-, Preis- und Befundzeile."""
+        self.lbl_flour_hint.setText(flour_share_hint(self.spin_flour.value()))
+        self._render_label_preview()
         nutrients = self._current_nutrients()
 
         computed = energy_from_macros(nutrients)
@@ -346,13 +472,28 @@ class IngredientDialog(QDialog):
             per_100 = self.spin_price.value() / self.spin_size.value() * 100
             per_kg = per_100 * 10
             self.lbl_unit_price.setText(
-                f"Entspricht {format_number(per_100, 3)} € je 100 g "
-                f"bzw. {format_number(per_kg, 2)} € je Kilogramm."
+                f"{format_number(per_100, 3)} € je 100 g, {format_number(per_kg, 2)} € je kg"
             )
         else:
-            self.lbl_unit_price.setText("Ohne Preis und Packungsgröße bleibt die Zutat kostenlos.")
+            self.lbl_unit_price.setText("ohne Preis: zählt als kostenlos")
 
         self._render_findings()
+
+    def _render_label_preview(self) -> None:
+        """Zeigt die Bezeichnung so, wie sie im Zutatenverzeichnis steht."""
+        label = self.txt_label_name.text().strip() or self.txt_name.text().strip()
+        self.txt_label_name.setPlaceholderText(self.txt_name.text().strip() or "wie der Name")
+        allergens = self._current_allergens()
+        runs = "".join(
+            f"<b>{escape(run.text)}</b>" if run.bold else escape(run.text)
+            for run in list_runs(label, allergens)
+        )
+        status = "Allergene nicht erfasst" if allergens is None else ""
+        self.lbl_label_preview.setText(
+            f"Auf dem Etikett: {runs}" + (f" <i>({status})</i>" if status else "")
+            if runs
+            else status
+        )
 
     def _render_findings(self) -> None:
         """Zeigt Fehler und Warnungen der Prüfung an."""
@@ -429,3 +570,17 @@ class IngredientDialog(QDialog):
                 return
 
         self.accept()
+
+
+def flour_share_hint(percent: float) -> str:
+    """Erklärt einen Mehlanteil in Bäckersprache.
+
+    Bei einem Teilanteil steht die Teigausbeute daneben, mit der ein Vorteig
+    aus Mehl und Wasser genau diesen Anteil hätte - das ist die Zahl, die man
+    aus dem Rezept kennt.
+    """
+    if percent <= 0.0:
+        return "zählt nicht als Mehl"
+    if percent >= 100.0:
+        return "zählt vollständig als Mehl"
+    return f"entspricht einem Vorteig mit TA {10_000.0 / percent:.0f}"

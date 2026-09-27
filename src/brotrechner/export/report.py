@@ -11,25 +11,27 @@ Klick mit einem Importfehler abzustürzen.
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
 from brotrechner import __version__
 from brotrechner.core.analysis import RecipeAnalysis
-from brotrechner.core.nutrients import KCAL_TO_KJ
 from brotrechner.core.reference import reference_intake_percent, traffic_light
-from brotrechner.i18n import NUTRIENT_LABELS, format_number
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
+from brotrechner.i18n import NUTRIENT_LABELS, format_currency, format_number
 
 __all__ = ["ReportError", "is_available", "write_report"]
 
 try:  # pragma: no cover - abhängig von der Installation
     from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import (
         HRFlowable,
+        KeepTogether,
         Paragraph,
         SimpleDocTemplate,
         Spacer,
@@ -54,6 +56,12 @@ def is_available() -> bool:
 _ACCENT = "#2F6B3A"
 _SECONDARY = "#1B5E86"
 _DANGER = "#B3261E"
+
+#: Spaltenbreiten der Nährwerttabelle in cm, ohne und mit Spalte je Portion.
+#: Mit ihr wird es eng: Jede Spalte ist so breit wie ihr längster Text samt
+#: Innenabstand, zusammen 16,6 der 17 cm zwischen den Rändern.
+_NUTRITION_WIDTHS = (5.0, 3.6, 3.6, 1.8, 2.0)
+_NUTRITION_WIDTHS_WITH_PORTION = (4.4, 3.3, 3.3, 2.7, 1.3, 1.6)
 
 
 def write_report(
@@ -104,6 +112,11 @@ def write_report(
     small = ParagraphStyle("BrSmall", parent=styles["Normal"], fontSize=7.5, textColor=colors.grey)
     centred = ParagraphStyle("BrCentred", parent=styles["Normal"], alignment=TA_CENTER)
 
+    portion_note = (
+        ", die Werte je Portion ebenso, berechnet aus den ungerundeten Werten je 100 g"
+        if analysis.per_portion is not None
+        else ""
+    )
     story: list[Any] = [
         Paragraph(recipe_name, title_style),
         Paragraph(
@@ -122,13 +135,18 @@ def write_report(
             "(8400 kJ / 2000 kcal, Anhang XIII VO (EU) Nr. 1169/2011). "
             "Ballaststoffe haben keine EU-Referenzmenge; verglichen wird mit dem "
             "DGE-Richtwert von 30 g je Tag. "
-            "Die Bandbreite folgt den Deklarationstoleranzen der EU-Guidance von 2012.",
+            "Die Werte je 100 g sind wie auf dem Etikett nach der Rundungsregel der "
+            f"EU-Leitlinie von 2012 gerundet{portion_note}. Bandbreite, % RM und Ampel "
+            "beziehen sich auf 100 g. Die Bandbreite ist die zulässige Abweichung eines "
+            "Laborwerts des fertigen Brots nach den Toleranzen derselben Leitlinie.",
             small,
         ),
         Paragraph("Zutaten, Bäckerprozent und Kosten", h2),
         _ingredients_table(analysis),
         Spacer(1, 10),
-        _cost_summary(analysis),
+        # Nie über einen Seitenumbruch verteilt: Sonst stand der Preis je
+        # Portion allein oben auf der nächsten Seite.
+        KeepTogether([_cost_summary(analysis)]),
     ]
 
     if analysis.lines_without_price:
@@ -186,12 +204,21 @@ def _facts_table(analysis: RecipeAnalysis) -> Any:
         ],
         [
             "Backverlust",
-            f"{analysis.water_loss_percent:.1f} %",
+            f"{format_number(analysis.water_loss_percent, 1)} %",
             "Hydration",
             f"{analysis.hydration_percent:.0f} %" if analysis.dough_yield else "-",
         ],
     ]
-    table = Table(rows, colWidths=[3.6 * cm, 3.0 * cm, 3.6 * cm, 3.0 * cm], hAlign="LEFT")
+    portion = analysis.portion
+    if portion is not None:
+        count = "-"
+        if analysis.portion_count is not None and portion.fits_into(analysis.baked_weight_g):
+            number, approximate = portion.rounded_count(analysis.baked_weight_g)
+            count = f"ca. {number}" if approximate else str(number)
+        rows.append(["Portion", _right(portion.title, size=9), "Portionen", count])
+    # Breit genug für eine lange Portion wie "Kastenweißbrotscheibe", die sonst
+    # mitten im Wort umbrach.
+    table = Table(rows, colWidths=[3.6 * cm, 4.2 * cm, 3.6 * cm, 4.2 * cm], hAlign="LEFT")
     table.setStyle(
         TableStyle(
             [
@@ -207,11 +234,43 @@ def _facts_table(analysis: RecipeAnalysis) -> Any:
     return table
 
 
+def _right(text: str, *, size: float, bold: bool = False) -> Any:
+    """Rechtsbündiger Absatz für eine Tabellenzelle - er bricht um, statt überzulaufen.
+
+    Einfacher Text läuft in einer reportlab-Tabelle über den Zellrand in die
+    Nachbarzelle. Bei Texten aus der Eingabe, etwa der Portion, ist die Länge
+    nicht bekannt.
+    """
+    style = ParagraphStyle(
+        "BrCell",
+        fontName="Helvetica-Bold" if bold else "Helvetica",
+        fontSize=size,
+        leading=size * 1.2,
+        alignment=TA_RIGHT,
+    )
+    return Paragraph(escape(text), style)
+
+
+def _declared(name: str, value: float) -> str:
+    """Angabe eines Nährwerts wie auf dem Etikett."""
+    if name == "energy_kcal":
+        return declare_energy(as_declarable(value))
+    return declare_nutrient(name, as_declarable(value)).text
+
+
 def _nutrition_table(analysis: RecipeAnalysis) -> Any:
-    """Nährwerttabelle mit Bandbreite, Referenzmenge und Ampel."""
+    """Nährwerttabelle mit Bandbreite, Referenzmenge und Ampel.
+
+    Mit einer Portion steht neben "je 100 g" eine Spalte "je Scheibe (50 g)".
+    """
     nutrients = analysis.per_100g
-    header = ["Nährstoff", "je 100 g", "Bandbreite", "% RM", "Ampel"]
-    rows: list[list[str]] = [header]
+    portion = analysis.portion
+    per_portion = analysis.per_portion
+    header: list[Any] = ["Nährstoff", "je 100 g"]
+    if portion is not None and per_portion is not None:
+        header.append(_right(f"je {portion.title}", size=8.5, bold=True))
+    header += ["Bandbreite", "% RM", "Ampel"]
+    rows: list[list[Any]] = [header]
 
     order = [
         "energy_kcal",
@@ -227,7 +286,6 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
         value = getattr(nutrients, name)
         value_range = analysis.ranges_per_100g.get(name)
         if name == "energy_kcal":
-            shown = f"{value * KCAL_TO_KJ:.0f} kJ / {value:.0f} kcal"
             band = (
                 f"{value_range.minimum:.0f} - {value_range.maximum:.0f} kcal"
                 if value_range
@@ -235,7 +293,6 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
             )
         else:
             decimals = 2 if name == "salt" else 1
-            shown = f"{format_number(value, decimals)} g"
             band = (
                 f"{format_number(value_range.minimum, decimals)} - "
                 f"{format_number(value_range.maximum, decimals)} g"
@@ -244,17 +301,14 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
             )
         percent = reference_intake_percent(name, value)
         light = traffic_light(name, value)
-        rows.append(
-            [
-                NUTRIENT_LABELS[name],
-                shown,
-                band,
-                f"{percent:.0f} %" if percent is not None else "-",
-                light.label,
-            ]
-        )
+        row = [NUTRIENT_LABELS[name], _declared(name, value)]
+        if per_portion is not None:
+            row.append(_declared(name, getattr(per_portion, name)))
+        row += [band, f"{percent:.0f} %" if percent is not None else "-", light.label]
+        rows.append(row)
 
-    table = Table(rows, colWidths=[5.0 * cm, 3.6 * cm, 3.6 * cm, 1.8 * cm, 2.0 * cm], hAlign="LEFT")
+    widths = _NUTRITION_WIDTHS_WITH_PORTION if len(header) == 6 else _NUTRITION_WIDTHS
+    table = Table(rows, colWidths=[width * cm for width in widths], hAlign="LEFT")
     style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -274,21 +328,34 @@ def _nutrition_table(analysis: RecipeAnalysis) -> Any:
 
 
 def _ingredients_table(analysis: RecipeAnalysis) -> Any:
-    """Zutatentabelle mit Hersteller, Anteil, Bäckerprozent und Kosten."""
-    rows: list[list[str]] = [
-        ["Zutat", "Hersteller", "Menge", "Anteil", "Bäcker%", "€/100 g", "Kosten"]
-    ]
-    for line in analysis.lines:
+    """Zutatentabelle mit Hersteller, Anteil, Bäckerprozent und Kosten.
+
+    Hat das Rezept Stufen, stehen die Zutaten nach Stufen geordnet, jede
+    Stufe mit einer Überschrift samt Teigausbeute und Mehlanteil.
+    """
+    header = ["Zutat", "Hersteller", "Menge", "Anteil", "Bäcker%", "€/100 g", "Kosten"]
+    rows: list[list[str]] = [header]
+    headings: list[int] = []
+    summaries = {summary.stage: summary for summary in analysis.stages}
+    order = list(summaries)
+    lines = sorted(analysis.lines, key=lambda line: order.index(line.stage))
+    for index, line in enumerate(lines):
+        if analysis.has_stages and (index == 0 or lines[index - 1].stage is not line.stage):
+            summary = summaries[line.stage]
+            headings.append(len(rows))
+            rows.append(
+                [f"{summary.stage.label} · {summary.ratio_text}"] + [""] * (len(header) - 1)
+            )
         ingredient = line.ingredient
         rows.append(
             [
                 ingredient.name,
                 ingredient.manufacturer or "-",
                 f"{line.amount_g:.0f} g",
-                f"{line.share_percent:.1f} %",
+                f"{format_number(line.share_percent, 1)} %",
                 f"{line.baker_percent:.0f} %" if analysis.flour_mass_g else "-",
                 format_number(ingredient.price_per_100g, 3) if ingredient.has_price else "-",
-                f"{line.cost:.2f} €" if ingredient.has_price else "-",
+                format_currency(line.cost) if ingredient.has_price else "-",
             ]
         )
 
@@ -298,37 +365,46 @@ def _ingredients_table(analysis: RecipeAnalysis) -> Any:
         hAlign="LEFT",
         repeatRows=1,
     )
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
-                ("FONTSIZE", (0, 0), (-1, -1), 8),
-                ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
-                ("TOPPADDING", (0, 0), (-1, -1), 3.5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
-            ]
-        )
-    )
+    style: list[tuple[Any, ...]] = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF2EC")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+    ]
+    for row in headings:
+        style += [
+            ("SPAN", (0, row), (-1, row)),
+            ("ALIGN", (0, row), (-1, row), "LEFT"),
+            ("FONTNAME", (0, row), (-1, row), "Helvetica-Bold"),
+            ("TEXTCOLOR", (0, row), (-1, row), colors.HexColor(_SECONDARY)),
+            ("BACKGROUND", (0, row), (-1, row), colors.HexColor("#F4F7FA")),
+        ]
+    table.setStyle(TableStyle(style))
     return table
 
 
 def _cost_summary(analysis: RecipeAnalysis) -> Any:
     """Kostenzusammenfassung rechtsbündig."""
     rows = [
-        ["Materialkosten", f"{analysis.material_cost:.2f} €"],
+        ["Materialkosten", format_currency(analysis.material_cost)],
         [
             f"Energie ({format_number(analysis.energy_kwh, 2)} kWh × "
             f"{format_number(analysis.energy_price, 2)} €/kWh)",
-            f"{analysis.energy_cost:.2f} €",
+            format_currency(analysis.energy_cost),
         ],
-        ["Gesamtkosten", f"{analysis.total_cost:.2f} €"],
+        ["Gesamtkosten", format_currency(analysis.total_cost)],
         ["", ""],
-        ["Preis je 100 g", f"{analysis.cost_per_100g:.2f} €"],
-        ["Preis je Kilogramm", f"{analysis.cost_per_kg:.2f} €"],
+        ["Preis je 100 g", format_currency(analysis.cost_per_100g)],
+        ["Preis je Kilogramm", format_currency(analysis.cost_per_kg)],
     ]
-    table = Table(rows, colWidths=[8.0 * cm, 3.4 * cm], hAlign="RIGHT")
+    if analysis.portion is not None and analysis.cost_per_portion is not None:
+        rows.append(
+            [f"Preis je {analysis.portion.title}", format_currency(analysis.cost_per_portion)]
+        )
+    table = Table(rows, colWidths=[10.0 * cm, 3.4 * cm], hAlign="RIGHT")
     table.setStyle(
         TableStyle(
             [

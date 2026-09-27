@@ -6,27 +6,96 @@ Druck bedienen - in der Vorversion erzeugte jeder Knopf sein eigenes Bild
 direkt auf der Festplatte, weshalb es keine Vorschau geben konnte.
 
 Aufbau und Reihenfolge der Nährwerttabelle folgen Anhang XV der VO (EU)
-Nr. 1169/2011: Energie (kJ und kcal), Fett, davon gesättigte Fettsäuren,
-Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz.
+Nr. 1169/2011: Brennwert (kJ und kcal), Fett, davon gesättigte Fettsäuren,
+Kohlenhydrate, davon Zucker, Ballaststoffe (freiwillig), Eiweiß, Salz. Die
+Werte sind nach der Leitlinie der EU-Kommission gerundet
+(:mod:`brotrechner.core.rounding`). Mit einer Portion
+(:attr:`LabelOptions.portion`) steht neben "je 100 g" eine zweite Spalte, und
+darunter die Zahl der Portionen (Artikel 33).
 
-Preise erscheinen bewusst nie auf dem Etikett - es ist für verschenkte Brote
-gedacht.
+Preise erscheinen bewusst nie auf dem Etikett. Es taugt für verschenkte Brote
+wie für den Verkauf: Im Verkaufsmodus (:attr:`LabelOptions.for_sale`) hält
+jede Schrift die Mindest-x-Höhe ein, die Ziffern der Füllmenge ihre
+Mindesthöhe, und das Zutatenverzeichnis wird nicht zugunsten der Schriftgröße
+gekürzt. :func:`measure_label` prüft das gezeichnete Ergebnis.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
-from typing import Final
+from typing import Any, Final
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
-from brotrechner.core.nutrients import KCAL_TO_KJ, Nutrients
-from brotrechner.export.fonts import Font, FontSet, load_font_set
+from brotrechner.core.labeling import Run, parse_emphasis
+from brotrechner.core.nutrients import Nutrients
+from brotrechner.core.portions import Portion
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
+from brotrechner.core.sales import SaleIssue
+from brotrechner.export.fonts import Font, FontSet, ink_height, load_font_set
 
-__all__ = ["LabelOptions", "LabelSize", "LabelTheme", "render_label"]
+__all__ = [
+    "MAX_LABEL_MM",
+    "MAX_LABEL_PIXELS",
+    "MIN_LABEL_MM",
+    "MIN_X_HEIGHT_MM",
+    "LabelOptions",
+    "LabelReport",
+    "LabelSize",
+    "LabelTheme",
+    "measure_label",
+    "render_and_measure",
+    "render_label",
+    "required_digit_height_mm",
+]
+
+#: Mindest-x-Höhe der Pflichtangaben in Millimetern (Artikel 13 Abs. 2 und
+#: Anhang IV der VO (EU) Nr. 1169/2011). Die Ausnahme von 0,9 mm gilt nur für
+#: Packungen, deren größte Oberfläche kleiner als 80 cm² ist - ein Brotbeutel
+#: ist größer.
+MIN_X_HEIGHT_MM: Final = 1.2
+
+#: Mindesthöhe der Ziffern der Füllmenge je Gewichtsstufe: bis 50 g 2 mm, bis
+#: 200 g 3 mm, bis 1 kg 4 mm, darüber 6 mm (Richtlinie 76/211/EWG, Anhang I
+#: Nr. 3.1; in Deutschland umgesetzt in der Fertigpackungsverordnung). Für
+#: Packungen ungleicher Füllmenge, die eine Preisauszeichnungswaage
+#: beschriftet, lässt die Verordnung 2 mm genügen - hier gilt bewusst die
+#: strengere Staffel.
+_DIGIT_HEIGHTS: Final[tuple[tuple[float, float], ...]] = ((50.0, 2.0), (200.0, 3.0), (1000.0, 4.0))
+_DIGIT_HEIGHT_ABOVE: Final = 6.0
+_DIGITS: Final = "0123456789"
+
+#: Rechenungenauigkeit beim Vergleich von Millimetern aus ganzen Pixeln.
+_EPSILON: Final = 1e-9
+
+#: Grenzen für ein eigenes Format. Nach unten bleiben nach den Rändern 16 mm
+#: Breite für den Inhalt; nach oben ist ein A4-Blatt die Grenze - größer ist
+#: kein Etikett, und das Bild wüchse ins Unermessliche.
+MIN_LABEL_MM: Final = 30.0
+MAX_LABEL_MM: Final = 297.0
+
+#: Höchstzahl an Pixeln eines Etikettbilds. Ein Blatt A4 in 600 dpi hat rund
+#: 35 Millionen; in 1200 dpi wären es 139 Millionen und über 400 MB Speicher.
+MAX_LABEL_PIXELS: Final = 40_000_000
+
+_NET_WEIGHT_WORD: Final = "Nettogewicht"
+_NUTRITION_HEADING: Final = "Nährwerte je 100 g"
+#: Überschrift mit Spalte je Portion - "je 100 g" steht dann im Spaltenkopf.
+_NUTRITION_HEADING_COLUMNS: Final = "Nährwerte"
+_PER_100G: Final = "je 100 g"
+_INGREDIENTS_HEADING: Final = "Zutaten"
+
+
+def required_digit_height_mm(grams: float) -> float:
+    """Mindesthöhe der Ziffern einer Füllmenge von ``grams`` Gramm in Millimetern."""
+    for limit, height in _DIGIT_HEIGHTS:
+        if grams <= limit:
+            return height
+    return _DIGIT_HEIGHT_ABOVE
 
 
 class LabelSize(Enum):
@@ -118,13 +187,42 @@ class LabelOptions:
     baked_on: date | None = None
 
     #: Zutatenliste, absteigend nach Anteil - so verlangt es die
-    #: Zutatenverzeichnis-Regel der VO (EU) Nr. 1169/2011.
+    #: Zutatenverzeichnis-Regel der VO (EU) Nr. 1169/2011. Allergene stehen in
+    #: ``*Sternchen*`` und werden fett gedruckt.
     ingredients: Sequence[str] = field(default_factory=tuple)
+    #: Allergenangabe für ein Etikett ohne Zutatenverzeichnis, etwa
+    #: "Enthält: Weizen, Milch" (Artikel 21 Abs. 1). Erscheint nur, wenn kein
+    #: Verzeichnis gedruckt wird.
+    allergen_note: str = ""
     net_weight_g: float = 0.0
+
+    #: Etikett für den Verkauf: Jede Schrift hat mindestens
+    #: :data:`MIN_X_HEIGHT_MM` x-Höhe, die Ziffern der Füllmenge die Höhe nach
+    #: :func:`required_digit_height_mm`, und das Zutatenverzeichnis wird nicht
+    #: zugunsten der Schriftgröße gekürzt.
+    for_sale: bool = False
+    #: Name und Anschrift des Lebensmittelunternehmers (Artikel 9 Abs. 1 h),
+    #: mehrzeilig wie eingegeben.
+    producer: str = ""
+    #: Aufbewahrungshinweis, etwa "Trocken und bei Raumtemperatur lagern."
+    storage_hint: str = ""
+    #: Eigenes Format (Breite, Höhe) in Millimetern - etwa die Etiketten eines
+    #: Bogens, die keinem der festen Formate entsprechen. Hat Vorrang vor
+    #: ``size``.
+    custom_mm: tuple[float, float] | None = None
+    #: Portion für eine zweite Spalte "je Scheibe (50 g)" samt der Zahl der
+    #: Portionen im Nettogewicht. Passt die Spalte nicht auf das Format, fehlt
+    #: sie, und :attr:`LabelReport.portion_fits` meldet das.
+    portion: Portion | None = None
+
+    @property
+    def millimeters(self) -> tuple[float, float]:
+        """Breite und Höhe des Etiketts in Millimetern."""
+        return self.custom_mm if self.custom_mm is not None else self.size.millimeters
 
     def pixel_size(self) -> tuple[int, int]:
         """Bildgröße in Pixeln für die gewählte Auflösung."""
-        width_mm, height_mm = self.size.millimeters
+        width_mm, height_mm = self.millimeters
         return (
             max(1, round(width_mm / 25.4 * self.dpi)),
             max(1, round(height_mm / 25.4 * self.dpi)),
@@ -143,19 +241,36 @@ class _Metrics:
 
     pixels_per_mm: float
     factor: float
+    #: Kleinste Schriftgröße in Pixeln; 0, wenn keine Mindestgröße gilt.
+    min_text_px: int = 0
 
     def mm(self, value: float) -> int:
         """Millimeter in Pixel, ohne Stauchung - für Ränder und Linienstärken."""
         return max(1, round(value * self.pixels_per_mm))
 
     def scaled(self, value: float) -> int:
-        """Millimeter in Pixel, mit Stauchung - für Schrift und Zeilenabstände."""
+        """Millimeter in Pixel, mit Stauchung - für Abstände."""
         return max(1, round(value * self.factor * self.pixels_per_mm))
+
+    def text(self, size_mm: float) -> int:
+        """Schriftgröße in Pixeln: gestaucht, aber nie unter der Mindestgröße."""
+        return max(self.scaled(size_mm), self.min_text_px)
+
+    def line(self, size_mm: float, gap_mm: float) -> int:
+        """Zeilenhöhe zu einer Schrift von ``size_mm``.
+
+        Hebt die Mindestgröße die Schrift an, wächst die Zeile im selben
+        Verhältnis mit - sonst stießen die Zeilen aneinander.
+        """
+        if self.min_text_px <= self.scaled(size_mm):
+            return self.scaled(gap_mm)
+        return max(self.scaled(gap_mm), round(self.min_text_px * gap_mm / size_mm))
 
 
 #: Stufen, in denen die Typografie verkleinert wird, bis der Inhalt passt.
 #: Unter 0,62 wäre ein Etikett nicht mehr zuverlässig lesbar; dann kürzt
-#: stattdessen das Zutatenverzeichnis.
+#: stattdessen das Zutatenverzeichnis. Im Verkauf hält jede Stufe die
+#: Mindestgröße ein - kleiner als sie wird keine Schrift.
 _SCALE_STEPS: Final[tuple[float, ...]] = (1.0, 0.94, 0.88, 0.82, 0.76, 0.70, 0.66, 0.62)
 
 #: Bis zu dieser Stufe wird herunterskaliert, um das *vollständige*
@@ -200,6 +315,172 @@ def date_lines(options: LabelOptions) -> list[str]:
     return lines
 
 
+@dataclass(frozen=True, slots=True)
+class LabelReport:
+    """Befund eines gezeichneten Etiketts.
+
+    Gemessen wird das Bild, nicht die Absicht: Die x-Höhe stammt aus der Tinte
+    jeder Schrift, mit der tatsächlich Text entstanden ist.
+    """
+
+    #: Alles passt, das Zutatenverzeichnis vollständig, und der Fuß steht
+    #: auf dem Etikett statt darunter.
+    fits: bool
+    #: Alles außer dem Zutatenverzeichnis passt - es darf sich auf einem
+    #: Geschenketikett kürzen, der Rest nicht.
+    fixed_part_fits: bool
+    scalable_font: bool
+    #: Kleinste x-Höhe aller gezeichneten Texte.
+    min_x_height_mm: float
+    #: Höhe der Ziffern der Füllmenge; 0 ohne Füllmenge.
+    net_weight_digit_mm: float
+    #: Verlangte Ziffernhöhe nach :func:`required_digit_height_mm`; 0 ohne
+    #: Füllmenge und außerhalb des Verkaufs.
+    required_digit_mm: float
+    #: Die Füllmenge passt in ihrer Schriftgröße in die Breite.
+    net_weight_width_ok: bool
+    #: Höhe, die der Inhalt samt vollständigem Verzeichnis braucht.
+    required_height_px: int
+    available_height_px: int
+    #: Die Spalte je Portion steht auf dem Etikett - oder es war keine verlangt.
+    portion_fits: bool = True
+
+    def issues(self, *, for_sale: bool) -> list[SaleIssue]:
+        """Was am Etikett nicht stimmt.
+
+        Args:
+            for_sale: Prüft zusätzlich die Vorgaben für den Verkauf. Ein
+                Geschenketikett darf kleinere Schrift und ein gekürztes
+                Verzeichnis haben - aber nichts darf unten abgeschnitten werden.
+        """
+        issues: list[SaleIssue] = []
+        if not self.portion_fits:
+            issues.append(
+                SaleIssue(
+                    "portion_too_wide",
+                    "Die Spalte je Portion passt nicht neben die Werte je 100 g und fehlt "
+                    "deshalb - größeres Format wählen, eine kürzere Bezeichnung der "
+                    "Portion oder die Angabe je Portion abschalten.",
+                )
+            )
+        if not for_sale:
+            if not self.fixed_part_fits:
+                issues.append(
+                    SaleIssue(
+                        "does_not_fit",
+                        "Der Inhalt passt nicht auf dieses Format - der untere Teil wird "
+                        "abgeschnitten. Größeres Format wählen oder Texte kürzen.",
+                    )
+                )
+            return issues
+        if not self.scalable_font:
+            issues.append(
+                SaleIssue(
+                    "no_scalable_font",
+                    "Keine skalierbare Schrift gefunden - die Mindestschriftgröße lässt "
+                    "sich nicht einhalten (Art. 13 Abs. 2). Bitte eine TrueType-Schrift "
+                    "wie DejaVu Sans installieren.",
+                )
+            )
+        if not self.fits:
+            issues.append(
+                SaleIssue(
+                    "does_not_fit",
+                    "Der Inhalt passt nicht vollständig auf dieses Format, wenn jede Schrift "
+                    "die Mindestgröße hat - größeres Format wählen oder Texte kürzen, etwa "
+                    "Fußzeile oder Referenzhinweis weglassen (Art. 13 Abs. 2, Anhang IV)",
+                )
+            )
+        if self.min_x_height_mm + _EPSILON < MIN_X_HEIGHT_MM:
+            issues.append(
+                SaleIssue(
+                    "font_too_small",
+                    f"Schrift zu klein: x-Höhe {_mm(self.min_x_height_mm)} statt mindestens "
+                    f"{_mm(MIN_X_HEIGHT_MM)} (Art. 13 Abs. 2, Anhang IV)",
+                )
+            )
+        # Zu schmal ist die Ursache, zu kleine Ziffern sind dann nur die Folge.
+        if not self.net_weight_width_ok:
+            issues.append(
+                SaleIssue(
+                    "net_weight_too_wide",
+                    "Die Füllmenge passt in der vorgeschriebenen Ziffernhöhe von "
+                    f"{_mm(self.required_digit_mm)} nicht in die Breite - größeres Format "
+                    "wählen (Fertigpackungsverordnung)",
+                )
+            )
+        elif self.net_weight_digit_mm + _EPSILON < self.required_digit_mm:
+            issues.append(
+                SaleIssue(
+                    "net_weight_too_small",
+                    f"Ziffern der Füllmenge {_mm(self.net_weight_digit_mm)} hoch statt "
+                    f"mindestens {_mm(self.required_digit_mm)} (Fertigpackungsverordnung)",
+                )
+            )
+        return issues
+
+
+def _mm(value: float) -> str:
+    """Millimeter mit zwei Nachkommastellen und deutschem Komma."""
+    return f"{value:.2f} mm".replace(".", ",")
+
+
+class _MeasuringDraw(ImageDraw.ImageDraw):
+    """Zeichnet wie gewohnt und merkt sich jede Schrift, mit der Text entsteht.
+
+    Daraus misst :func:`measure_label` die kleinste x-Höhe - am Ergebnis, nicht
+    an der Absicht. Ein später ergänzter Textblock kann so nicht unbemerkt zu
+    klein geraten.
+    """
+
+    def __init__(self, image: Image.Image) -> None:
+        super().__init__(image)
+        self.fonts_used: dict[int, Font] = {}
+
+    def text(self, xy: Any, text: Any, *args: Any, **kwargs: Any) -> None:
+        font = kwargs.get("font")
+        if font is not None and text:
+            self.fonts_used[id(font)] = font
+        super().text(xy, text, *args, **kwargs)
+
+
+def measure_label(
+    nutrients: Nutrients,
+    options: LabelOptions,
+    *,
+    fonts: FontSet | None = None,
+) -> LabelReport:
+    """Zeichnet das Etikett und prüft das Ergebnis.
+
+    Args:
+        nutrients: Nährwerte je 100 g fertiges Brot.
+        options: Gestaltung und Inhalte - geprüft in der dort gewählten
+            Auflösung, denn die Schrift rundet auf ganze Pixel.
+        fonts: Vorgeladener Schriftsatz; ``None`` lädt den des Systems.
+
+    Raises:
+        ValueError: Wie :func:`render_label`.
+    """
+    return _render(nutrients, options, fonts or load_font_set())[1]
+
+
+def render_and_measure(
+    nutrients: Nutrients,
+    options: LabelOptions,
+    *,
+    fonts: FontSet | None = None,
+) -> tuple[Image.Image, LabelReport]:
+    """Zeichnet das Etikett und prüft es in einem Durchgang.
+
+    Für die Vorschau im Dialog: Bild und Befund stammen aus demselben
+    Zeichenvorgang und passen damit sicher zusammen.
+
+    Raises:
+        ValueError: Wie :func:`render_label`.
+    """
+    return _render(nutrients, options, fonts or load_font_set())
+
+
 def render_label(
     nutrients: Nutrients,
     options: LabelOptions,
@@ -226,19 +507,49 @@ def render_label(
         RGB-Bild in der in ``options`` gewählten Größe.
 
     Raises:
-        ValueError: Bei unsinniger Auflösung oder negativem Nettogewicht.
+        ValueError: Bei unsinniger Auflösung, negativem Nettogewicht, einem
+            Format außerhalb von :data:`MIN_LABEL_MM` bis :data:`MAX_LABEL_MM`
+            oder mehr als :data:`MAX_LABEL_PIXELS` Pixeln.
     """
+    return _render(nutrients, options, fonts or load_font_set())[0]
+
+
+def _render(
+    nutrients: Nutrients, options: LabelOptions, fonts: FontSet
+) -> tuple[Image.Image, LabelReport]:
+    """Zeichnet das Etikett und misst dabei, was entsteht."""
     if options.dpi < 36 or options.dpi > 1200:
         raise ValueError(f"Auflösung muss zwischen 36 und 1200 dpi liegen, war {options.dpi}")
     if options.net_weight_g < 0:
         raise ValueError(f"Nettogewicht darf nicht negativ sein, war {options.net_weight_g}")
+    portion = options.portion
+    if (
+        portion is not None
+        and options.net_weight_g > 0
+        and not portion.fits_into(options.net_weight_g)
+    ):
+        raise ValueError(
+            f"Die Portion ({portion.title}) ist schwerer als das Nettogewicht "
+            f"({options.net_weight_g:.0f} g)"
+        )
+    if not all(MIN_LABEL_MM <= side <= MAX_LABEL_MM for side in options.millimeters):
+        width_mm, height_mm = options.millimeters
+        raise ValueError(
+            f"Etikettformat muss je Seite zwischen {MIN_LABEL_MM:g} und {MAX_LABEL_MM:g} mm "
+            f"liegen, war {width_mm:g} × {height_mm:g} mm"
+        )
+    pixels = options.pixel_size()
+    if pixels[0] * pixels[1] > MAX_LABEL_PIXELS:
+        raise ValueError(
+            f"Etikett zu groß für {options.dpi} dpi: {pixels[0]} × {pixels[1]} Pixel - "
+            "bitte eine kleinere Auflösung wählen"
+        )
 
-    fonts = fonts or load_font_set()
     palette = options.theme.colors
     width, height = options.pixel_size()
 
     image = Image.new("RGB", (width, height), palette.background)
-    draw = ImageDraw.Draw(image)
+    draw = _MeasuringDraw(image)
 
     metrics = _fitting_metrics(
         draw,
@@ -291,6 +602,15 @@ def render_label(
         right=right,
         top=y,
     )
+    # Der Fuß steht unten auf dem Etikett. Reicht der Platz nicht, rückt er
+    # unter den Inhalt und wird am Rand abgeschnitten - überlagert wird nie.
+    # Im Verkauf bleibt dabei das Zutatenverzeichnis vollständig.
+    inner = right - left
+    reserved = _body_height(
+        draw, options, fonts=fonts, m=metrics, width=inner, full_ingredients=options.for_sale
+    ) + _footer_height(draw, options, fonts, metrics, inner)
+    bottom = height - margin - metrics.mm(2.0)
+    pushed_out = y + reserved > bottom
     footer_top = _draw_footer(
         draw,
         options,
@@ -299,11 +619,12 @@ def render_label(
         m=metrics,
         left=left,
         right=right,
-        bottom=height - margin - metrics.mm(2.0),
+        bottom=max(bottom, y + reserved),
     )
 
-    if options.show_ingredients and options.ingredients:
-        _draw_ingredients(
+    complete = True
+    if _shows_ingredients(options):
+        complete = _draw_ingredients(
             draw,
             options,
             palette=palette,
@@ -314,8 +635,59 @@ def render_label(
             top=y,
             bottom=footer_top,
         )
+    elif options.allergen_note.strip():
+        _draw_allergen_note(
+            draw, options, palette=palette, fonts=fonts, m=metrics, left=left, right=right, top=y
+        )
 
-    return image
+    fixed = _required_height(draw, nutrients, options, fonts=fonts, m=metrics, width=width)
+    pixels_per_mm = metrics.pixels_per_mm
+    x_height = min((ink_height(font, "x") for font in draw.fonts_used.values()), default=math.inf)
+    weight = (
+        _net_weight_layout(draw, options, fonts, metrics, right - left)
+        if options.net_weight_g > 0
+        else None
+    )
+    report = LabelReport(
+        fits=complete and not pushed_out,
+        fixed_part_fits=fixed <= height,
+        scalable_font=fonts.is_scalable,
+        min_x_height_mm=x_height / pixels_per_mm,
+        net_weight_digit_mm=(
+            ink_height(weight.value_font, _DIGITS) / pixels_per_mm if weight else 0.0
+        ),
+        required_digit_mm=(
+            required_digit_height_mm(options.net_weight_g) if weight and options.for_sale else 0.0
+        ),
+        net_weight_width_ok=weight.fits_width if weight else True,
+        required_height_px=_required_height(
+            draw, nutrients, options, fonts=fonts, m=metrics, width=width, full_ingredients=True
+        ),
+        available_height_px=height,
+        portion_fits=not _table_layout(
+            draw, nutrients, options, fonts=fonts, m=metrics, width=right - left
+        ).portion_dropped,
+    )
+    return image, report
+
+
+def _shows_ingredients(options: LabelOptions) -> bool:
+    """Wird ein Zutatenverzeichnis gedruckt?"""
+    return options.show_ingredients and bool(options.ingredients)
+
+
+def _ingredient_runs(options: LabelOptions) -> list[Run]:
+    """Das Zutatenverzeichnis als Folge normaler und fetter Textstücke.
+
+    Jede Zutat wird für sich zerlegt: Ein nicht geschlossenes Sternchen in
+    einer Bezeichnung darf nicht mit dem der nächsten ein Paar bilden.
+    """
+    runs: list[Run] = []
+    for index, entry in enumerate(options.ingredients):
+        if index:
+            runs.append(Run(", "))
+        runs.extend(parse_emphasis(single_line(entry)))
+    return runs
 
 
 def _fitting_metrics(
@@ -335,16 +707,23 @@ def _fitting_metrics(
     Angabe und wiegt schwerer als ein Millimeter Schriftgröße. Gelingt das bis
     :data:`_FULL_LIST_MIN_FACTOR` nicht, entscheidet der zweite Durchgang nur
     noch über den festen Teil, und die Liste kürzt sich selbst.
+
+    Im Verkauf gibt es den zweiten Durchgang nicht: Dort wird bis zur
+    kleinsten Stufe versucht, das vollständige Verzeichnis unterzubringen.
+    Passt es auch dann nicht, meldet :func:`measure_label` das.
     """
+    minimum = _min_text_px(fonts, options, pixels_per_mm)
     for factor in _SCALE_STEPS:
-        if factor < _FULL_LIST_MIN_FACTOR:
+        if factor < _FULL_LIST_MIN_FACTOR and not options.for_sale:
             break
-        metrics = _Metrics(pixels_per_mm, factor)
+        metrics = _Metrics(pixels_per_mm, factor, minimum)
         needed = _required_height(
             draw, nutrients, options, fonts=fonts, m=metrics, width=width, full_ingredients=True
         )
         if needed <= height:
             return metrics
+    if options.for_sale:
+        return _Metrics(pixels_per_mm, _SCALE_STEPS[-1], minimum)
 
     for factor in _SCALE_STEPS:
         metrics = _Metrics(pixels_per_mm, factor)
@@ -352,6 +731,13 @@ def _fitting_metrics(
         if needed <= height:
             return metrics
     return _Metrics(pixels_per_mm, _SCALE_STEPS[-1])
+
+
+def _min_text_px(fonts: FontSet, options: LabelOptions, pixels_per_mm: float) -> int:
+    """Kleinste Schriftgröße in Pixeln: im Verkauf die für 1,2 mm x-Höhe, sonst 0."""
+    if not options.for_sale:
+        return 0
+    return fonts.size_for_ink("x", MIN_X_HEIGHT_MM * pixels_per_mm) or 0
 
 
 def _required_height(
@@ -374,36 +760,69 @@ def _required_height(
     inner_width = width - 2 * (m.mm(5.0) + m.mm(2.0))
     total = 2 * (m.mm(5.0) + m.mm(2.0))
 
-    title = _wrap(draw, single_line(options.title), _font_title(fonts, m), inner_width)
-    total += max(1, len(title)) * m.scaled(5.6)
+    _, title, title_line = _title_layout(draw, options, fonts, m, inner_width)
+    total += max(1, len(title)) * title_line
 
     subtitle = single_line(options.subtitle)
     if subtitle:
         lines = _wrap(draw, subtitle, _font_subtitle(fonts, m), inner_width)
-        total += m.scaled(0.6) + len(lines) * m.scaled(3.4)
+        total += m.scaled(0.6) + len(lines) * m.line(2.6, 3.4)
 
-    dates = date_lines(options)
+    dates = _date_rows(draw, options, _font_small(fonts, m), inner_width)
     if dates:
-        total += m.scaled(0.8) + len(dates) * m.scaled(3.4)
+        total += m.scaled(0.8) + len(dates) * m.line(2.1, 3.4)
 
     total += m.scaled(1.6) + m.scaled(3.4)  # Trennlinie mit Abstand
 
-    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
-    total += m.scaled(4.6) + len(rows) * m.scaled(4.2) + m.scaled(3.0)
+    table = _table_layout(draw, nutrients, options, fonts=fonts, m=m, width=inner_width)
+    header = _wrap(draw, table.heading, _font_section(fonts, m), inner_width)
+    total += _heading_height(header, m, gap_mm=4.6)
+    total += table.height(m) + _after_table_height(
+        _count_lines(draw, options, table, fonts=fonts, m=m, width=inner_width), m
+    )
 
     if options.net_weight_g > 0:
-        total += m.scaled(2.8) + m.scaled(6.0)
+        total += _net_weight_layout(draw, options, fonts, m, inner_width).height(m)
 
-    if options.show_ingredients and options.ingredients:
-        total += m.scaled(4.0)  # Überschrift
-        if full_ingredients:
-            text = single_line(", ".join(options.ingredients))
-            lines = _wrap(draw, text, _font_small(fonts, m), inner_width)
-            total += len(lines) * m.scaled(3.0)
-        else:
-            total += m.scaled(3.0)  # mindestens eine Zeile
-
+    total += _body_height(
+        draw, options, fonts=fonts, m=m, width=inner_width, full_ingredients=full_ingredients
+    )
     return total + _footer_height(draw, options, fonts, m, inner_width)
+
+
+def _body_height(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+    full_ingredients: bool,
+) -> int:
+    """Höhe von Zutatenverzeichnis oder Allergenhinweis.
+
+    Args:
+        full_ingredients: Rechnet das Verzeichnis mit allen Zeilen ein, sonst
+            nur mit einer - es darf sich auf einem Geschenketikett kürzen.
+    """
+    if _shows_ingredients(options):
+        heading = _heading_height(
+            _wrap(draw, _INGREDIENTS_HEADING, _font_section(fonts, m), width), m, gap_mm=4.0
+        )
+        if not full_ingredients:
+            return heading + m.line(2.1, 3.0)
+        lines = _wrap_runs(
+            draw,
+            _ingredient_runs(options),
+            _font_small(fonts, m),
+            _font_small(fonts, m, bold=True),
+            width,
+        )
+        return heading + len(lines) * m.line(2.1, 3.0)
+    if options.allergen_note.strip():
+        note = _wrap(draw, single_line(options.allergen_note), _font_small(fonts, m), width)
+        return m.scaled(1.0) + len(note) * m.line(2.1, 3.0)
+    return 0
 
 
 def _footer_height(
@@ -413,45 +832,440 @@ def _footer_height(
     m: _Metrics,
     inner_width: int,
 ) -> int:
-    """Höhe von Referenzhinweis und Fußzeile."""
-    height = m.scaled(2.0)
+    """Höhe des Fußes: Lagerhinweis, Hersteller, Referenzhinweis und Fußzeile."""
+    blocks = _footer_blocks(draw, options, fonts, m, inner_width)
+    return m.scaled(2.0) + sum(len(block.lines) * block.line_height for block in blocks)
+
+
+@dataclass(frozen=True, slots=True)
+class _FooterBlock:
+    """Ein Absatz im Fuß des Etiketts."""
+
+    lines: list[str]
+    font: Font
+    line_height: int
+    #: Pflichtangaben stehen in der kräftigen Textfarbe, der Rest gedämpft.
+    mandatory: bool
+
+
+def _footer_blocks(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, fonts: FontSet, m: _Metrics, width: int
+) -> list[_FooterBlock]:
+    """Die Absätze des Fußes von oben nach unten.
+
+    Name und Anschrift behalten ihre Zeilen, wie sie eingegeben wurden - auf
+    einem schmalen Etikett liest sich eine Anschrift so besser als in einer
+    umbrochenen Zeile.
+    """
+    small = _font_small(fonts, m)
+    blocks: list[_FooterBlock] = []
+    storage = _wrap(draw, single_line(options.storage_hint), small, width)
+    if storage:
+        blocks.append(_FooterBlock(storage, small, m.line(2.1, 3.0), mandatory=True))
+    producer = [
+        part
+        for line in options.producer.splitlines()
+        for part in _wrap(draw, single_line(line), small, width)
+    ]
+    if producer:
+        blocks.append(_FooterBlock(producer, small, m.line(2.1, 3.0), mandatory=True))
     if options.show_reference_hint:
-        lines = _wrap(draw, _REFERENCE_HINT, _font_hint(fonts, m), inner_width)
-        height += len(lines) * m.scaled(2.4)
-    if single_line(options.footer):
-        height += m.scaled(3.4)
-    return height
+        hint = _font_hint(fonts, m)
+        blocks.append(
+            _FooterBlock(
+                _wrap(draw, _REFERENCE_HINT, hint, width), hint, m.line(1.7, 2.4), mandatory=False
+            )
+        )
+    footer = _wrap(draw, single_line(options.footer), small, width)
+    if footer:
+        blocks.append(_FooterBlock(footer, small, m.line(2.1, 3.4), mandatory=False))
+    return blocks
+
+
+def _title_layout(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, fonts: FontSet, m: _Metrics, width: int
+) -> tuple[Font, list[str], int]:
+    """Schrift, Zeilen und Zeilenhöhe des Titels.
+
+    Ein Titel wird lieber etwas kleiner gesetzt als mitten im Wort getrennt -
+    "Roggenmischb / rot" war auf dem kleinen Etikett die Folge einer festen
+    Titelgröße. Die Schrift schrumpft, bis das längste Wort in die Zeile passt,
+    höchstens bis auf die Größe des Fließtexts. Erst darunter wird hart
+    getrennt.
+    """
+    text = single_line(options.title)
+    size = m.text(4.6)
+    line_height = m.line(4.6, 5.6)
+    words = text.split(" ") if text else []
+
+    def widest(px: int) -> float:
+        font = fonts.get(px, bold=True)
+        return max(draw.textlength(word, font=font) for word in words)
+
+    if words and widest(size) > width:
+        floor = m.text(2.7)
+        size = max(floor, min(size - 1, int(size * width / widest(size))))
+        while size > floor and widest(size) > width:
+            size -= 1
+        line_height = round(size * 5.6 / 4.6)
+    font = fonts.get(size, bold=True)
+    return font, _wrap(draw, text, font, width), line_height
+
+
+def _heading_height(lines: Sequence[str], m: _Metrics, *, gap_mm: float) -> int:
+    """Höhe einer Abschnittsüberschrift samt Abstand zum Inhalt darunter."""
+    return max(0, len(lines) - 1) * m.line(2.9, 3.6) + m.line(2.9, gap_mm)
+
+
+def _draw_heading(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    *,
+    colour: str,
+    fonts: FontSet,
+    m: _Metrics,
+    left: int,
+    width: int,
+    top: int,
+    gap_mm: float,
+) -> int:
+    """Zeichnet eine Abschnittsüberschrift - auf schmalem Etikett umbrochen.
+
+    Returns:
+        Das ``y``, an dem der Abschnitt beginnt.
+    """
+    font = _font_section(fonts, m)
+    lines = _wrap(draw, text, font, width)
+    y = top
+    for index, line in enumerate(lines):
+        if index:
+            y += m.line(2.9, 3.6)
+        draw.text((left, y), line, fill=colour, font=font)
+    return top + _heading_height(lines, m, gap_mm=gap_mm)
+
+
+def _date_rows(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, font: Font, width: int
+) -> list[str]:
+    """Datumszeilen, jede für sich auf die Breite umgebrochen."""
+    return [part for line in date_lines(options) for part in _wrap(draw, line, font, width)]
+
+
+@dataclass(frozen=True, slots=True)
+class _TableRow:
+    """Eine Zeile der Nährwerttabelle, auf die Breite des Etiketts gebracht.
+
+    Reicht die Breite nicht für Beschriftung und Wert nebeneinander, wird die
+    Beschriftung umbrochen - "davon gesättigte Fettsäuren" lief auf dem
+    kleinen Etikett sonst in ihren eigenen Wert hinein. Passt nicht einmal ein
+    einzelnes Wort neben den Wert, rückt der Wert in eine eigene Zeile.
+    """
+
+    label_lines: tuple[str, ...]
+    #: Je Wertespalte die Zeilen des Werts. Mehr als eine, wenn der Brennwert
+    #: auf kJ und kcal verteilt ist oder ein Wert allein breiter als das
+    #: Etikett ist.
+    cells: tuple[tuple[str, ...], ...]
+    indented: bool
+    emphasised: bool
+    value_below: bool
+
+    @property
+    def _value_lines(self) -> int:
+        return max(len(cell) for cell in self.cells)
+
+    @property
+    def lines(self) -> int:
+        """Zahl der Textzeilen der Tabellenzeile."""
+        if self.value_below:
+            return len(self.label_lines) + self._value_lines
+        return max(len(self.label_lines), self._value_lines)
+
+    @property
+    def value_offset(self) -> int:
+        """Zeile, in der die Werte beginnen.
+
+        Neben der Beschriftung stehen sie unten bündig - ein einzelner Wert
+        also auf der Grundlinie der letzten Zeile einer umbrochenen
+        Beschriftung.
+        """
+        if self.value_below:
+            return len(self.label_lines)
+        return self.lines - self._value_lines
+
+    def height(self, m: _Metrics) -> int:
+        return m.line(2.7, 4.2) + (self.lines - 1) * m.line(2.7, 3.3)
+
+
+@dataclass(frozen=True, slots=True)
+class _Table:
+    """Die Nährwerttabelle: Zeilen und - mit Portion - zwei Wertespalten."""
+
+    rows: tuple[_TableRow, ...]
+    #: Je Wertespalte die Zeilen ihres Kopfs; leer ohne Spalte je Portion.
+    headers: tuple[tuple[str, ...], ...] = ()
+    #: Breite je Wertespalte; leer, wenn jeder Wert für sich rechtsbündig steht.
+    widths: tuple[int, ...] = ()
+    gap: int = 0
+    #: Eine Spalte je Portion war verlangt, passte aber nicht auf das Format.
+    portion_dropped: bool = False
+
+    @property
+    def heading(self) -> str:
+        return _NUTRITION_HEADING_COLUMNS if self.headers else _NUTRITION_HEADING
+
+    def edges(self, right: int) -> tuple[int, ...]:
+        """Rechte Kante jeder Wertespalte."""
+        if not self.widths:
+            return (right,)
+        edges: list[int] = []
+        x = right
+        for width in reversed(self.widths):
+            edges.append(x)
+            x -= width + self.gap
+        return tuple(reversed(edges))
+
+    def header_height(self, m: _Metrics) -> int:
+        if not self.headers:
+            return 0
+        return max(len(lines) for lines in self.headers) * m.line(2.1, 3.0)
+
+    def height(self, m: _Metrics) -> int:
+        """Spaltenköpfe und Zeilen, ohne den Abstand darunter."""
+        return self.header_height(m) + sum(row.height(m) for row in self.rows)
+
+
+def _table_layout(
+    draw: ImageDraw.ImageDraw,
+    nutrients: Nutrients,
+    options: LabelOptions,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> _Table:
+    """Die Nährwerttabelle samt Umbruch.
+
+    Mit Portion wird zuerst versucht, beide Spalten neben die Beschriftungen
+    zu stellen. Rückt dabei eine Zeile unter ihre Beschriftung, steht der
+    Brennwert zweizeilig ("951 kJ" über "227 kcal") - das macht die Spalten
+    schmal. Passen die beiden Spalten nicht einmal nebeneinander in die
+    Breite, fehlt die Spalte je Portion.
+    """
+    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
+    portion = options.portion
+    if portion is None:
+        return _one_column(draw, rows, fonts=fonts, m=m, width=width)
+    per_portion = _nutrition_rows(portion.nutrients(nutrients), show_fiber=options.show_fiber)
+    wide = _two_columns(
+        draw, rows, per_portion, portion, fonts=fonts, m=m, width=width, split_energy=False
+    )
+    if wide is not None and not any(row.value_below for row in wide.rows):
+        return wide
+    narrow = _two_columns(
+        draw, rows, per_portion, portion, fonts=fonts, m=m, width=width, split_energy=True
+    )
+    if narrow is not None:
+        return narrow
+    single = _one_column(draw, rows, fonts=fonts, m=m, width=width)
+    return _Table(single.rows, portion_dropped=True)
+
+
+def _one_column(
+    draw: ImageDraw.ImageDraw,
+    rows: list[tuple[str, str, bool, bool]],
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> _Table:
+    """Tabelle mit den Werten je 100 g, jeder für sich rechtsbündig."""
+    result: list[_TableRow] = []
+    for label, value, indented, emphasised in rows:
+        font = _font_body(fonts, m, bold=emphasised)
+        indent = m.scaled(3.0) if indented else 0
+        room = width - indent - m.scaled(2.0) - draw.textlength(value, font=font)
+        values = [value]
+        if draw.textlength(label, font=font) <= room:
+            lines, below = [label], False
+        elif all(draw.textlength(word, font=font) <= room for word in label.split(" ")):
+            lines, below = _wrap(draw, label, font, int(room)), False
+        else:
+            lines, below = _wrap(draw, label, font, width - indent), True
+            values = _wrap(draw, value, font, width - indent)
+        result.append(_TableRow(tuple(lines), (tuple(values),), indented, emphasised, below))
+    return _Table(tuple(result))
+
+
+def _two_columns(
+    draw: ImageDraw.ImageDraw,
+    rows: list[tuple[str, str, bool, bool]],
+    per_portion: list[tuple[str, str, bool, bool]],
+    portion: Portion,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+    split_energy: bool,
+) -> _Table | None:
+    """Tabelle mit Spalten je 100 g und je Portion; ``None``, wenn sie nicht passen."""
+    headers = ((_PER_100G,), (f"je {portion.name}", f"({portion.weight_text})"))
+    header_font = _font_small(fonts, m)
+    cells: list[tuple[tuple[str, ...], ...]] = []
+    widths = [max(draw.textlength(line, font=header_font) for line in lines) for lines in headers]
+    for (_, value, _, emphasised), (_, portion_value, _, _) in zip(rows, per_portion, strict=True):
+        font = _font_body(fonts, m, bold=emphasised)
+        row = tuple(_cell(text, split=split_energy) for text in (value, portion_value))
+        for column, cell in enumerate(row):
+            widths[column] = max(
+                widths[column], *(draw.textlength(line, font=font) for line in cell)
+            )
+        cells.append(row)
+    gap = m.scaled(2.0)
+    column_widths = tuple(math.ceil(value) for value in widths)
+    values_width = sum(column_widths) + gap
+    if values_width > width:
+        return None
+
+    result: list[_TableRow] = []
+    for (label, _, indented, emphasised), row in zip(rows, cells, strict=True):
+        font = _font_body(fonts, m, bold=emphasised)
+        indent = m.scaled(3.0) if indented else 0
+        room = width - indent - m.scaled(2.0) - values_width
+        if draw.textlength(label, font=font) <= room:
+            lines, below = [label], False
+        elif all(draw.textlength(word, font=font) <= room for word in label.split(" ")):
+            lines, below = _wrap(draw, label, font, int(room)), False
+        else:
+            lines, below = _wrap(draw, label, font, width - indent), True
+        result.append(_TableRow(tuple(lines), row, indented, emphasised, below))
+    return _Table(tuple(result), headers, column_widths, gap)
+
+
+def _cell(value: str, *, split: bool) -> tuple[str, ...]:
+    """Ein Wert als Zellzeilen - der Brennwert auf Wunsch als kJ über kcal."""
+    if split and " / " in value:
+        return tuple(value.split(" / "))
+    return (value,)
+
+
+def _count_lines(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    table: _Table,
+    *,
+    fonts: FontSet,
+    m: _Metrics,
+    width: int,
+) -> list[str]:
+    """Zahl der Portionen unter der Tabelle - nur mit Spalte je Portion und Nettogewicht."""
+    portion = options.portion
+    if portion is None or not table.headers or options.net_weight_g <= 0:
+        return []
+    text = f"Ergibt {portion.count_text(options.net_weight_g)}"
+    return _wrap(draw, text, _font_small(fonts, m), width)
+
+
+def _after_table_height(count: Sequence[str], m: _Metrics) -> int:
+    """Abstand unter der Tabelle, samt der Zeilen mit der Zahl der Portionen."""
+    if not count:
+        return m.scaled(3.0)
+    return m.scaled(2.2) + len(count) * m.line(2.1, 3.0) + m.scaled(1.6)
+
+
+@dataclass(frozen=True, slots=True)
+class _NetWeightLayout:
+    """Das Nettogewicht: Wort und Menge, nebeneinander oder untereinander.
+
+    Auf dem kleinen Etikett ragte "Nettogewicht 2,96 kg" über den Rand. Im
+    Verkauf wächst zudem die Menge auf die vorgeschriebene Ziffernhöhe - das
+    Wort bleibt dabei in seiner Größe.
+    """
+
+    value: str
+    word_font: Font
+    value_font: Font
+    one_line: bool
+    fits_width: bool
+    #: Das Wort, wenn es allein steht - umbrochen, falls das Etikett schmaler ist.
+    word_lines: tuple[str, ...]
+    #: Höhe einer Zeile, in der das Wort allein steht.
+    word_line: int
+    #: Höhe der Zeile mit der Menge samt Abstand darunter.
+    value_line: int
+
+    def height(self, m: _Metrics) -> int:
+        words = 0 if self.one_line else len(self.word_lines) * self.word_line
+        return m.scaled(2.8) + words + self.value_line
+
+
+def _net_weight_layout(
+    draw: ImageDraw.ImageDraw, options: LabelOptions, fonts: FontSet, m: _Metrics, width: int
+) -> _NetWeightLayout:
+    """Schriften und Anordnung des Nettogewichts."""
+    value = _format_weight(options.net_weight_g)
+    word_px = m.text(3.6)
+    value_px = word_px
+    if options.for_sale:
+        digits = fonts.size_for_ink(
+            _DIGITS,
+            required_digit_height_mm(options.net_weight_g) * m.pixels_per_mm,
+            cuts=(True,),
+        )
+        value_px = max(value_px, digits or 0)
+    word_font = fonts.get(word_px, bold=True)
+    value_font = fonts.get(value_px, bold=True)
+    value_width = draw.textlength(value, font=value_font)
+    fits_width = value_width <= width
+    if not fits_width:
+        # Lieber kleinere Ziffern als eine Menge, die über den Rand ragt - der
+        # Befund meldet, dass die vorgeschriebene Höhe nicht in die Breite passt.
+        value_px = max(1, min(value_px - 1, int(value_px * width / value_width)))
+        while value_px > 1 and draw.textlength(value, font=fonts.get(value_px, bold=True)) > width:
+            value_px -= 1
+        value_font = fonts.get(value_px, bold=True)
+        value_width = draw.textlength(value, font=value_font)
+    together = draw.textlength(f"{_NET_WEIGHT_WORD} ", font=word_font) + value_width
+    return _NetWeightLayout(
+        value=value,
+        word_font=word_font,
+        value_font=value_font,
+        one_line=together <= width,
+        fits_width=fits_width,
+        word_lines=tuple(_wrap(draw, _NET_WEIGHT_WORD, word_font, width)),
+        word_line=m.line(3.6, 4.4),
+        value_line=value_px + m.line(3.6, 6.0) - word_px,
+    )
+
+
+def _ascent(font: Font) -> int:
+    """Abstand von der Oberlänge zur Grundlinie in Pixeln."""
+    if isinstance(font, ImageFont.FreeTypeFont):
+        return font.getmetrics()[0]
+    return 0  # pragma: no cover - die Bitmapschrift kennt nur eine Größe
 
 
 # ── Schriftgrößen ──────────────────────────────────────────────────────────
 
 
-def _font_title(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(4.6), bold=True)
-
-
 def _font_subtitle(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(2.6))
+    return fonts.get(m.text(2.6))
 
 
 def _font_section(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(2.9), bold=True)
+    return fonts.get(m.text(2.9), bold=True)
 
 
 def _font_body(fonts: FontSet, m: _Metrics, *, bold: bool = False) -> Font:
-    return fonts.get(m.scaled(2.7), bold=bold)
+    return fonts.get(m.text(2.7), bold=bold)
 
 
-def _font_small(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(2.1))
-
-
-def _font_weight(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(3.6), bold=True)
+def _font_small(fonts: FontSet, m: _Metrics, *, bold: bool = False) -> Font:
+    return fonts.get(m.text(2.1), bold=bold)
 
 
 def _font_hint(fonts: FontSet, m: _Metrics) -> Font:
-    return fonts.get(m.scaled(1.7))
+    return fonts.get(m.text(1.7))
 
 
 # ── Einzelne Blöcke ────────────────────────────────────────────────────────
@@ -469,16 +1283,16 @@ def _draw_head(
     top: int,
 ) -> int:
     """Titel, Untertitel, Datumszeilen und Trennlinie."""
-    y = _draw_wrapped_centered(
-        draw,
-        single_line(options.title),
-        font=_font_title(fonts, m),
-        colour=palette.accent,
-        left=left,
-        right=right,
-        top=top,
-        line_height=m.scaled(5.6),
-    )
+    title_font, title, title_line = _title_layout(draw, options, fonts, m, right - left)
+    centre = (left + right) // 2
+    y = top
+    # Alle Texte hängen an Ober- oder Unterlänge der Schrift ("a", "d"), nicht
+    # an ihrer Tinte ("t", "b"): Nur so stehen die Zeilen in gleichmäßigem
+    # Abstand, und Wert und Beschriftung einer Tabellenzeile teilen sich eine
+    # Grundlinie. Mit "rt" saßen die Werte sichtbar höher als ihre Beschriftung.
+    for line in title:
+        draw.text((centre, y), line, fill=palette.accent, font=title_font, anchor="ma")
+        y += title_line
 
     subtitle = single_line(options.subtitle)
     if subtitle:
@@ -490,17 +1304,16 @@ def _draw_head(
             left=left,
             right=right,
             top=y + m.scaled(0.6),
-            line_height=m.scaled(3.4),
+            line_height=m.line(2.6, 3.4),
         )
 
-    dates = date_lines(options)
+    font = _font_small(fonts, m)
+    dates = _date_rows(draw, options, font, right - left)
     if dates:
         y += m.scaled(0.8)
-        font = _font_small(fonts, m)
-        centre = (left + right) // 2
         for line in dates:
-            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mt")
-            y += m.scaled(3.4)
+            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="ma")
+            y += m.line(2.1, 3.4)
 
     y += m.scaled(1.6)
     draw.line([(left, y), (right, y)], fill=palette.accent, width=max(1, m.mm(0.5)))
@@ -519,33 +1332,67 @@ def _draw_nutrition(
     right: int,
     top: int,
 ) -> int:
-    """Überschrift und Nährwerttabelle."""
-    draw.text((left, top), "Nährwerte je 100 g", fill=palette.accent, font=_font_section(fonts, m))
-    y = top + m.scaled(4.6)
+    """Überschrift, Nährwerttabelle und die Zahl der Portionen."""
+    width = right - left
+    table = _table_layout(draw, nutrients, options, fonts=fonts, m=m, width=width)
+    y = _draw_heading(
+        draw,
+        table.heading,
+        colour=palette.accent,
+        fonts=fonts,
+        m=m,
+        left=left,
+        width=width,
+        top=top,
+        gap_mm=4.6,
+    )
 
-    rows = _nutrition_rows(nutrients, show_fiber=options.show_fiber)
-    row_height = m.scaled(4.2)
     panel_top = y - m.scaled(1.2)
     draw.rectangle(
         [
             left - m.mm(1.5),
             panel_top,
             right + m.mm(1.5),
-            panel_top + len(rows) * row_height + m.scaled(2.4),
+            panel_top + table.height(m) + m.scaled(2.4),
         ],
         fill=palette.panel,
     )
 
-    body = _font_body(fonts, m)
-    body_bold = _font_body(fonts, m, bold=True)
-    for label, value, indented, emphasised in rows:
-        font = body_bold if emphasised else body
-        colour = palette.muted if indented else palette.text
-        draw.text((left + (m.scaled(3.0) if indented else 0), y), label, fill=colour, font=font)
-        draw.text((right, y), value, fill=colour, font=font, anchor="rt")
-        y += row_height
+    edges = table.edges(right)
+    small = _font_small(fonts, m)
+    for edge, lines in zip(edges, table.headers, strict=False):
+        for index, text in enumerate(lines):
+            line_y = y + index * m.line(2.1, 3.0)
+            draw.text((edge, line_y), text, fill=palette.muted, font=small, anchor="ra")
+    y += table.header_height(m)
 
-    return y + m.scaled(3.0)
+    line_height = m.line(2.7, 3.3)
+    for row in table.rows:
+        font = _font_body(fonts, m, bold=row.emphasised)
+        colour = palette.muted if row.indented else palette.text
+        x = left + (m.scaled(3.0) if row.indented else 0)
+        for index, text in enumerate(row.label_lines):
+            draw.text((x, y + index * line_height), text, fill=colour, font=font)
+        values_top = y + row.value_offset * line_height
+        for edge, cell in zip(edges, row.cells, strict=True):
+            for index, text in enumerate(cell):
+                draw.text(
+                    (edge, values_top + index * line_height),
+                    text,
+                    fill=colour,
+                    font=font,
+                    anchor="ra",
+                )
+        y += row.height(m)
+
+    count = _count_lines(draw, options, table, fonts=fonts, m=m, width=width)
+    if count:
+        # Pflicht, sobald Werte je Portion dastehen (Artikel 33 Abs. 1).
+        line_y = y + m.scaled(2.2)
+        for line in count:
+            draw.text((left, line_y), line, fill=palette.text, font=small)
+            line_y += m.line(2.1, 3.0)
+    return y + _after_table_height(count, m)
 
 
 def _draw_net_weight(
@@ -564,14 +1411,32 @@ def _draw_net_weight(
         return top
     draw.line([(left, top), (right, top)], fill=palette.rule, width=max(1, m.mm(0.25)))
     y = top + m.scaled(2.8)
-    draw.text(
-        ((left + right) // 2, y),
-        f"Nettogewicht {_format_weight(options.net_weight_g)}",
-        fill=palette.accent,
-        font=_font_weight(fonts, m),
-        anchor="mt",
-    )
-    return y + m.scaled(6.0)
+    layout = _net_weight_layout(draw, options, fonts, m, right - left)
+    centre = (left + right) // 2
+    colour = palette.accent
+    if layout.one_line and layout.word_font is layout.value_font:
+        text = f"{_NET_WEIGHT_WORD} {layout.value}"
+        draw.text((centre, y), text, fill=colour, font=layout.value_font, anchor="ma")
+    elif layout.one_line:
+        # Verschiedene Größen in einer Zeile teilen sich die Grundlinie.
+        word = f"{_NET_WEIGHT_WORD} "
+        word_width = draw.textlength(word, font=layout.word_font)
+        start = centre - (word_width + draw.textlength(layout.value, font=layout.value_font)) / 2
+        baseline = y + _ascent(layout.value_font)
+        draw.text((round(start), baseline), word, fill=colour, font=layout.word_font, anchor="ls")
+        draw.text(
+            (round(start + word_width), baseline),
+            layout.value,
+            fill=colour,
+            font=layout.value_font,
+            anchor="ls",
+        )
+    else:
+        for word in layout.word_lines:
+            draw.text((centre, y), word, fill=colour, font=layout.word_font, anchor="ma")
+            y += layout.word_line
+        draw.text((centre, y), layout.value, fill=colour, font=layout.value_font, anchor="ma")
+    return y + layout.value_line
 
 
 def _draw_footer(
@@ -592,18 +1457,11 @@ def _draw_footer(
     """
     centre = (left + right) // 2
     y = bottom
-
-    footer = single_line(options.footer)
-    if footer:
-        draw.text((centre, y), footer, fill=palette.muted, font=_font_small(fonts, m), anchor="mb")
-        y -= m.scaled(3.4)
-
-    if options.show_reference_hint:
-        font = _font_hint(fonts, m)
-        for line in reversed(_wrap(draw, _REFERENCE_HINT, font, right - left)):
-            draw.text((centre, y), line, fill=palette.muted, font=font, anchor="mb")
-            y -= m.scaled(2.4)
-
+    for block in reversed(_footer_blocks(draw, options, fonts, m, right - left)):
+        colour = palette.text if block.mandatory else palette.muted
+        for line in reversed(block.lines):
+            draw.text((centre, y), line, fill=colour, font=block.font, anchor="md")
+            y -= block.line_height
     return y - m.scaled(2.0)
 
 
@@ -618,39 +1476,192 @@ def _draw_ingredients(
     right: int,
     top: int,
     bottom: int,
-) -> None:
+) -> bool:
     """Überschrift und Zutatenverzeichnis im verbleibenden Platz.
 
     Reicht der Platz nicht, wird die Schrift stufenweise verkleinert und
     zuletzt gekürzt: Ein Brot mit zwölf Zutaten hat ein deutlich längeres
-    Verzeichnis als eines mit dreien.
+    Verzeichnis als eines mit dreien. Im Verkauf endet das Verkleinern an der
+    Mindestgröße.
+
+    Returns:
+        ``True``, wenn das Verzeichnis vollständig auf dem Etikett steht.
     """
-    draw.text((left, top), "Zutaten", fill=palette.accent, font=_font_section(fonts, m))
-    y = top + m.scaled(4.0)
+    y = _draw_heading(
+        draw,
+        _INGREDIENTS_HEADING,
+        colour=palette.accent,
+        fonts=fonts,
+        m=m,
+        left=left,
+        width=right - left,
+        top=top,
+        gap_mm=4.0,
+    )
     available = bottom - y
     if available <= 0:
-        return
+        return False
 
-    text = single_line(", ".join(options.ingredients))
-    font = _font_small(fonts, m)
-    line_height = m.scaled(3.0)
-    lines = _wrap(draw, text, font, right - left)
-
+    runs = _ingredient_runs(options)
+    width = right - left
+    complete = True
     for size_mm, gap_mm in ((2.1, 3.0), (1.9, 2.7), (1.7, 2.4), (1.5, 2.1)):
-        font = fonts.get(m.scaled(size_mm))
-        line_height = m.scaled(gap_mm)
-        lines = _wrap(draw, text, font, right - left)
+        regular = fonts.get(m.text(size_mm))
+        bold = fonts.get(m.text(size_mm), bold=True)
+        line_height = m.line(size_mm, gap_mm)
+        lines = _wrap_runs(draw, runs, regular, bold, width)
         if len(lines) * line_height <= available:
             break
     else:
         max_lines = max(1, available // line_height)
         if len(lines) > max_lines:
+            complete = False
             lines = lines[:max_lines]
-            lines[-1] = lines[-1].rstrip(", ") + " …"
+            # Das Auslassungszeichen braucht Platz: Notfalls weicht das letzte
+            # Wort davor, sonst ragte die Zeile über den Rand.
+            last = [*lines[-1], [("…", False)]]
+            while len(last) > 1 and _line_width(draw, last, regular, bold) > width:
+                del last[-2]
+            lines[-1] = last
 
     for line in lines:
-        draw.text((left, y), line, fill=palette.muted, font=font)
+        # Allergene fett und in der kräftigeren Textfarbe: Sie sollen sich
+        # deutlich vom übrigen Verzeichnis abheben (Artikel 21 Abs. 1).
+        _draw_runs_line(
+            draw,
+            line,
+            x=left,
+            y=y,
+            regular=regular,
+            bold=bold,
+            fill=palette.muted,
+            bold_fill=palette.text,
+        )
         y += line_height
+    return complete
+
+
+def _draw_allergen_note(
+    draw: ImageDraw.ImageDraw,
+    options: LabelOptions,
+    *,
+    palette: _Palette,
+    fonts: FontSet,
+    m: _Metrics,
+    left: int,
+    right: int,
+    top: int,
+) -> None:
+    """Allergenangabe anstelle des Zutatenverzeichnisses."""
+    y = top + m.scaled(1.0)
+    font = _font_small(fonts, m)
+    for line in _wrap(draw, single_line(options.allergen_note), font, right - left):
+        draw.text((left, y), line, fill=palette.text, font=font)
+        y += m.line(2.1, 3.0)
+
+
+#: Eine Zeile aus Wörtern, jedes Wort aus Stücken ``(Text, fett)``.
+_Word = list[tuple[str, bool]]
+_Line = list[_Word]
+
+
+def _wrap_runs(
+    draw: ImageDraw.ImageDraw,
+    runs: Sequence[Run],
+    regular: Font,
+    bold: Font,
+    max_width: int,
+) -> list[_Line]:
+    """Bricht Text aus normalen und fetten Stücken auf die Breite um.
+
+    Ein Wort kann aus mehreren Stücken bestehen ("**Weizen**mehl") und wird
+    nie zwischen ihnen getrennt. Nur ein Wort, das allein breiter als die
+    Zeile ist, wird hart getrennt, damit nichts über den Rand läuft.
+    """
+    words: list[_Word] = [[]]
+    for run in runs:
+        for index, part in enumerate(run.text.split(" ")):
+            if index:
+                words.append([])
+            if part:
+                words[-1].append((part, run.bold))
+    space = draw.textlength(" ", font=regular)
+
+    lines: list[_Line] = []
+    current: _Line = []
+    current_width = 0.0
+    for word in (w for w in words if w):
+        for piece in _split_word(draw, word, regular, bold, max_width):
+            width = _word_width(draw, piece, regular, bold)
+            if current and current_width + space + width > max_width:
+                lines.append(current)
+                current, current_width = [], 0.0
+            current_width += (space if current else 0.0) + width
+            current.append(piece)
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _split_word(
+    draw: ImageDraw.ImageDraw, word: _Word, regular: Font, bold: Font, max_width: int
+) -> list[_Word]:
+    """Trennt ein Wort, das allein breiter als die Zeile ist, Zeichen für Zeichen."""
+    if _word_width(draw, word, regular, bold) <= max_width:
+        return [word]
+    pieces: list[_Word] = [[]]
+    for text, is_bold in word:
+        for char in text:
+            candidate = [*pieces[-1], (char, is_bold)]
+            if pieces[-1] and _word_width(draw, candidate, regular, bold) > max_width:
+                pieces.append([(char, is_bold)])
+            else:
+                pieces[-1] = candidate
+    return [_merge_segments(piece) for piece in pieces]
+
+
+def _merge_segments(word: _Word) -> _Word:
+    """Fasst benachbarte Stücke gleicher Auszeichnung zusammen."""
+    merged: _Word = []
+    for text, is_bold in word:
+        if merged and merged[-1][1] == is_bold:
+            merged[-1] = (merged[-1][0] + text, is_bold)
+        else:
+            merged.append((text, is_bold))
+    return merged
+
+
+def _word_width(draw: ImageDraw.ImageDraw, word: _Word, regular: Font, bold: Font) -> float:
+    return sum(draw.textlength(text, font=bold if is_bold else regular) for text, is_bold in word)
+
+
+def _line_width(draw: ImageDraw.ImageDraw, line: _Line, regular: Font, bold: Font) -> float:
+    """Breite einer umbrochenen Zeile samt Wortabständen."""
+    space = draw.textlength(" ", font=regular)
+    return sum(_word_width(draw, word, regular, bold) for word in line) + space * (len(line) - 1)
+
+
+def _draw_runs_line(
+    draw: ImageDraw.ImageDraw,
+    line: _Line,
+    *,
+    x: int,
+    y: int,
+    regular: Font,
+    bold: Font,
+    fill: str,
+    bold_fill: str,
+) -> None:
+    """Zeichnet eine Zeile Stück für Stück mit der jeweiligen Schrift und Farbe."""
+    space = draw.textlength(" ", font=regular)
+    cursor = float(x)
+    for index, word in enumerate(line):
+        if index:
+            cursor += space
+        for text, is_bold in word:
+            font = bold if is_bold else regular
+            draw.text((round(cursor), y), text, fill=bold_fill if is_bold else fill, font=font)
+            cursor += draw.textlength(text, font=font)
 
 
 def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str, str, bool, bool]]:
@@ -659,34 +1670,23 @@ def _nutrition_rows(nutrients: Nutrients, *, show_fiber: bool) -> list[tuple[str
     Returns:
         Liste aus ``(Bezeichnung, Wert, eingerückt, hervorgehoben)``.
     """
-    kj = round(nutrients.energy_kcal * KCAL_TO_KJ)
     rows: list[tuple[str, str, bool, bool]] = [
-        ("Energie", f"{kj:.0f} kJ / {nutrients.energy_kcal:.0f} kcal", False, True),
-        ("Fett", _grams(nutrients.fat), False, False),
-        ("davon gesättigte Fettsäuren", _grams(nutrients.saturated_fat), True, False),
-        ("Kohlenhydrate", _grams(nutrients.carbs), False, False),
-        ("davon Zucker", _grams(nutrients.sugar), True, False),
+        ("Brennwert", declare_energy(as_declarable(nutrients.energy_kcal)), False, True),
+        ("Fett", _grams("fat", nutrients), False, False),
+        ("davon gesättigte Fettsäuren", _grams("saturated_fat", nutrients), True, False),
+        ("Kohlenhydrate", _grams("carbs", nutrients), False, False),
+        ("davon Zucker", _grams("sugar", nutrients), True, False),
     ]
     if show_fiber:
-        rows.append(("Ballaststoffe", _grams(nutrients.fiber), False, False))
-    rows.append(("Eiweiß", _grams(nutrients.protein), False, False))
-    rows.append(("Salz", _grams(nutrients.salt, decimals=2), False, False))
+        rows.append(("Ballaststoffe", _grams("fiber", nutrients), False, False))
+    rows.append(("Eiweiß", _grams("protein", nutrients), False, False))
+    rows.append(("Salz", _grams("salt", nutrients), False, False))
     return rows
 
 
-def _grams(value: float, *, decimals: int = 1) -> str:
-    """Formatiert einen Grammwert mit deutschem Dezimalkomma.
-
-    Werte unter 0,05 g werden nach den Rundungsregeln der EU-Guidance als
-    ``< 0,5 g`` bzw. ``0 g`` dargestellt.
-    """
-    if value <= 0:
-        return "0 g"
-    rounded = round(value, decimals)
-    if rounded == 0:
-        return "< 0,01 g" if decimals >= 2 else "< 0,1 g"
-    text = f"{rounded:.{decimals}f}".replace(".", ",")
-    return f"{text} g"
+def _grams(field_name: str, nutrients: Nutrients) -> str:
+    """Gerundete Angabe eines Nährstoffs nach der EU-Rundungsregel."""
+    return declare_nutrient(field_name, as_declarable(getattr(nutrients, field_name))).text
 
 
 def _format_weight(grams: float) -> str:
@@ -710,7 +1710,7 @@ def _draw_wrapped_centered(
     """Wie :func:`_draw_wrapped`, aber zentriert."""
     centre = (left + right) // 2
     for line in _wrap(draw, text, font, right - left):
-        draw.text((centre, top), line, fill=colour, font=font, anchor="mt")
+        draw.text((centre, top), line, fill=colour, font=font, anchor="ma")
         top += line_height
     return top
 

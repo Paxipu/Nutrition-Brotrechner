@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from hypothesis import HealthCheck, settings
 
 from brotrechner.core.models import Category, Ingredient, Recipe, RecipeItem
 from brotrechner.core.nutrients import Nutrients
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QWidget
 
 # Dateisystemzugriffe machen einzelne Hypothesis-Beispiele langsam; die
 # Voreinstellung würde deshalb grundlos scheitern.
@@ -56,7 +61,7 @@ def flour() -> Ingredient:
             fiber=14.0,
             water=13.0,
         ),
-        is_flour=True,
+        flour_percent=100.0,
         package_price=1.98,
         package_size_g=1000,
     )
@@ -124,11 +129,100 @@ def simple_recipe(flour: Ingredient, water: Ingredient, salt: Ingredient) -> Rec
 
 @pytest.fixture
 def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Isoliertes Datenverzeichnis; berührt niemals echte Nutzerdaten."""
+    """Isoliertes Datenverzeichnis; berührt niemals echte Nutzerdaten.
+
+    Auch das Benutzerverzeichnis ist ein leerer Ordner des Tests: Sonst legte
+    jeder Export auf einem Entwicklerrechner ``~/Documents/Brotrechner`` an.
+    """
     target = tmp_path / "daten"
     target.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
     monkeypatch.setenv("BROTRECHNER_DATA_DIR", str(target))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
     yield target
+
+
+#: So lange darf ein modaler Dialog offen stehen, bevor er als vergessen gilt.
+#: Beantwortete Dialoge kehren in Millisekunden zurück.
+_DIALOG_PATIENCE_MS = 1500
+
+
+def _describe(widget: QWidget) -> str:
+    """Wie ein offen gebliebener Dialog in der Fehlermeldung heißt.
+
+    Ein Meldungsfenster nach der ersten Zeile seines Textes: Auf macOS trägt es
+    keinen Titel, Qt verwirft ihn dort schon beim Setzen. Andere Dialoge nach
+    ihrem Titel und, wo auch der fehlt, nach ihrer Klasse.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    if isinstance(widget, QMessageBox):
+        lines = (line.strip() for line in widget.text().splitlines())
+        first = next((line for line in lines if line), "")
+        if first:
+            return first
+    return widget.windowTitle() or type(widget).__name__
+
+
+@dataclass
+class DialogGuard:
+    """Schließt modale Dialoge, die ein Test offen gelassen hat, und merkt sie sich."""
+
+    left_open: list[str] = field(default_factory=list)
+
+    def close_open_dialogs(self) -> list[str]:
+        """Schließt alle offenen modalen Dialoge.
+
+        Returns:
+            Wie sie heißen, siehe :func:`_describe`.
+        """
+        from PySide6.QtWidgets import QApplication, QDialog
+
+        closed: list[str] = []
+        while (widget := QApplication.activeModalWidget()) is not None:
+            closed.append(_describe(widget))
+            if isinstance(widget, QDialog):
+                widget.reject()
+            else:
+                widget.close()
+            if QApplication.activeModalWidget() is widget:  # ließ sich nicht schließen
+                break
+        self.left_open += closed
+        return closed
+
+
+@pytest.fixture(autouse=True)
+def dialog_guard(request: pytest.FixtureRequest) -> Iterator[DialogGuard]:
+    """Lässt einen Oberflächentest scheitern, statt an einem Dialog hängenzubleiben.
+
+    Ein modaler Dialog, den ein Test nicht beantwortet, hielt bisher den ganzen
+    Testlauf an - ohne Meldung, bis jemand ihn abbrach. Jetzt schließt ein
+    Zeitgeber ihn nach :data:`_DIALOG_PATIENCE_MS`, und der Test scheitert mit
+    dem Titel des Dialogs. Beantwortet werden Dialoge mit ``dialogs``.
+    """
+    guard = DialogGuard()
+    if request.node.get_closest_marker("gui") is None:
+        yield guard
+        return
+    request.getfixturevalue("qapp")
+    from PySide6.QtCore import QTimer
+
+    timer = QTimer()
+    timer.setInterval(_DIALOG_PATIENCE_MS)
+    timer.timeout.connect(guard.close_open_dialogs)
+    timer.start()
+    try:
+        yield guard
+    finally:
+        timer.stop()
+    guard.close_open_dialogs()
+    if guard.left_open:
+        pytest.fail(
+            "Unbeantwortete Dialoge: "
+            + ", ".join(f"„{title}“" for title in guard.left_open)
+            + " - bitte im Test beantworten, etwa mit der Fixture „dialogs“."
+        )
 
 
 @pytest.fixture

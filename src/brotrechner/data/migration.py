@@ -8,9 +8,9 @@ erraten.
 Diese Migration
     * übersetzt die Feldnamen,
     * zieht bekannte Hersteller aus dem Namen in ein eigenes Feld,
-    * setzt :attr:`~brotrechner.core.models.Ingredient.is_flour` einmalig
-      anhand derselben Heuristik wie früher, damit sich das Verhalten
-      bestehender Rezepte nicht ändert,
+    * setzt den Mehlanteil (:attr:`~brotrechner.core.models.Ingredient.flour_percent`)
+      einmalig anhand derselben Heuristik wie früher auf 100 oder 0 %, damit
+      sich das Verhalten bestehender Rezepte nicht ändert,
     * und führt Zutaten zusammen, die sich nur in Groß-/Kleinschreibung
       unterscheiden.
 
@@ -81,8 +81,8 @@ _LEGACY_FLOUR_KEYWORDS: Final = ("mehl", "stärke", "kartoffelstärke")
 #: Zutaten, die die alte Heuristik fälschlich als Mehl erkannt hat: Paniermehl
 #: ist bereits gebackenes Brot und gehört im Bäckerprozent nicht zur Mehlmenge.
 #: Leinmehl und Sojamehl bleiben bewusst Mehl - dort ist die Zuordnung eine
-#: Ermessensfrage, und das bisherige Verhalten soll sich nicht ändern. Über das
-#: Feld ``is_flour`` lässt sich das jederzeit einzeln umstellen.
+#: Ermessensfrage, und das bisherige Verhalten soll sich nicht ändern. Über den
+#: Mehlanteil lässt sich das jederzeit einzeln umstellen.
 _NOT_FLOUR_OVERRIDES: Final = (
     "altbrot",
     "paniermehl",
@@ -178,7 +178,7 @@ def migrate_ingredient(raw: dict[str, Any], *, fallback_name: str = "") -> Ingre
         manufacturer=manufacturer,
         category=category,
         nutrients=nutrients,
-        is_flour=_legacy_is_flour(raw_name, category),
+        flour_percent=100.0 if _legacy_is_flour(raw_name, category) else 0.0,
         package_price=float(raw.get("preis_pro_packung") or 0.0),
         package_size_g=float(raw.get("packungsgroesse") or 0.0),
         price_history=history,

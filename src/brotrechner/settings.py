@@ -10,15 +10,81 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+import math
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from brotrechner.core.analysis import DEFAULT_ENERGY_PRICE_EUR_PER_KWH
 
-__all__ = ["Settings", "load_settings", "save_settings"]
+__all__ = ["THEMES", "LabelPreferences", "Settings", "load_settings", "save_settings"]
 
 log = logging.getLogger(__name__)
+
+#: Gültige Farbmodi - dieselben Werte wie ``ThemeMode`` der Oberfläche, die
+#: hier nicht importiert wird, damit Einstellungen ohne Qt lesbar bleiben.
+THEMES: Final = ("system", "light", "dark")
+
+#: Spanne des Strompreises in Euro je kWh - dieselbe wie im Rechner.
+_ENERGY_PRICE_RANGE: Final = (0.0, 10.0)
+
+#: Obergrenzen gemerkter Zahlen. Die Eingabefelder begrenzen enger; diese
+#: Grenze verhindert nur, dass eine riesige Zahl aus der Datei ein Qt-Feld
+#: mit einem Überlauf zum Absturz bringt.
+_MAX_COUNT: Final = 100_000
+_MAX_LENGTH: Final = 10_000.0
+
+
+@dataclass(slots=True)
+class LabelPreferences:
+    """Was sich der Etikettdialog zwischen zwei Aufrufen merkt.
+
+    Format, Farbe und Druckart stehen als Text da. Welche es gibt, weiß der
+    Dialog; einen unbekannten Wert ersetzt er durch seine Vorgabe.
+    """
+
+    size: str = "medium"
+    custom_width_mm: float = 70.0
+    custom_height_mm: float = 100.0
+    theme: str = "natural"
+    dpi: int = 300
+    footer: str = "Mit Liebe gebacken"
+    show_date: bool = True
+    show_fiber: bool = True
+    show_reference_hint: bool = True
+    #: Nährwerte zusätzlich je Portion, sofern das Rezept eine hat.
+    show_portion: bool = True
+    for_sale: bool = False
+    producer: str = ""
+    storage_hint: str = ""
+    print_mode: str = "single"
+    rotate: bool = False
+    sheet_columns: int = 2
+    sheet_rows: int = 4
+    sheet_margin_left_mm: float = 0.0
+    sheet_margin_top_mm: float = 0.0
+    sheet_gap_x_mm: float = 0.0
+    sheet_gap_y_mm: float = 0.0
+    #: Erstes freies Etikett des angebrochenen Bogens - rückt nach jedem Druck vor.
+    sheet_next_free: int = 1
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LabelPreferences:
+        """Liest die gemerkten Werte; jeder muss den Typ seiner Vorgabe haben."""
+        defaults = cls()
+        values: dict[str, Any] = {}
+        for name, value in data.items():
+            if name not in cls.__slots__:
+                continue
+            cleaned = _like(getattr(defaults, name), value)
+            if cleaned is None:
+                log.warning(
+                    "Etiketteinstellung %s=%r ist ungültig - es gilt die Vorgabe", name, value
+                )
+                continue
+            values[name] = cleaned
+        return cls(**values)
 
 
 @dataclass(slots=True)
@@ -34,14 +100,89 @@ class Settings:
     window_geometry: str = ""
     """Fenstergeometrie als Base64-Zeichenkette von ``QWidget.saveGeometry``."""
     show_tolerances: bool = True
-    last_label_theme: str = "natural"
-    last_label_size: str = "medium"
+    label: LabelPreferences = field(default_factory=LabelPreferences)
+    """Gestaltung, Verkauf und Druck des Etiketts vom letzten Mal."""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Settings:
-        """Liest Einstellungen; unbekannte Schlüssel werden ignoriert."""
-        known = set(cls.__slots__)
-        return cls(**{k: v for k, v in data.items() if k in known})
+        """Liest Einstellungen; Unbekanntes wird ignoriert, Ungültiges ersetzt.
+
+        Die Datei lässt sich von Hand bearbeiten, und ein Tippfehler darf den
+        Start nicht verhindern. Früher wurde jeder Wert ungeprüft übernommen -
+        ``"theme": "blau"`` ließ das Programm beim Start abstürzen. Jetzt gilt
+        für einen ungültigen Wert die Vorgabe, und das Protokoll nennt ihn.
+        """
+        values: dict[str, Any] = {}
+        for name, value in data.items():
+            check = _CHECKS.get(name)
+            if check is None:
+                continue
+            cleaned = check(value)
+            if cleaned is None:
+                log.warning("Einstellung %s=%r ist ungültig - es gilt die Vorgabe", name, value)
+                continue
+            values[name] = cleaned
+        return cls(**values)
+
+
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _flag(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def _theme(value: object) -> str | None:
+    return value if isinstance(value, str) and value in THEMES else None
+
+
+def _count(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= _MAX_COUNT else None
+
+
+def _length(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and 0.0 <= number <= _MAX_LENGTH else None
+
+
+def _like(default: object, value: object) -> object | None:
+    """Prüft einen Wert gegen den Typ seiner Vorgabe."""
+    if isinstance(default, bool):
+        return _flag(value)
+    if isinstance(default, int):
+        return _count(value)
+    if isinstance(default, float):
+        return _length(value)
+    return _text(value)
+
+
+def _label(value: object) -> LabelPreferences | None:
+    return LabelPreferences.from_dict(value) if isinstance(value, dict) else None
+
+
+def _energy_price(value: object) -> float | None:
+    # bool ist in Python eine Zahl - "true" als Preis ist trotzdem ein Fehler.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    low, high = _ENERGY_PRICE_RANGE
+    number = float(value)
+    return number if math.isfinite(number) and low <= number <= high else None
+
+
+#: Prüfung je Einstellung: liefert den bereinigten Wert oder ``None``.
+_CHECKS: Final[dict[str, Callable[[object], Any]]] = {
+    "theme": _theme,
+    "energy_price": _energy_price,
+    "export_dir": _text,
+    "window_geometry": _text,
+    "show_tolerances": _flag,
+    "label": _label,
+}
 
 
 def load_settings(path: Path) -> Settings:

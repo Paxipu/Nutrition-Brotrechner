@@ -19,8 +19,15 @@ python tools/quality_gate.py
 ```
 
 Das prüft in dieser Reihenfolge: `ruff check`, `ruff format --check`,
-`mypy` im Strict-Modus, den Testlauf und die Testabdeckung (mindestens 90 %).
-Ein roter Durchgang wird nicht zusammengeführt.
+`mypy` im Strict-Modus, den Testlauf und die Testabdeckung (mindestens 90 %,
+die Oberfläche eingeschlossen). Ein roter Durchgang wird nicht zusammengeführt.
+
+**Oberflächentests** tragen die Markierung `gui` und laufen ohne Bildschirm
+(`QT_QPA_PLATFORM=offscreen`). Jeder Dialog, den ein Test auslöst, muss dort
+beantwortet werden – die Fixture `dialogs` erledigt das für die üblichen
+Rückfragen. Bleibt ein modaler Dialog offen, schließt ihn ein Wächter nach
+anderthalb Sekunden, und der Test scheitert mit dem Titel des Dialogs, statt
+den ganzen Lauf anzuhalten.
 
 ## Grundsätze
 

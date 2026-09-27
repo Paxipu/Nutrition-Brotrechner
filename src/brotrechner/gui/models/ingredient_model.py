@@ -21,8 +21,10 @@ from PySide6.QtCore import (
     Qt,
 )
 
+from brotrechner.core.allergens import describe_allergens
 from brotrechner.core.models import Category, Ingredient
 from brotrechner.core.validation import Severity, validate_ingredient
+from brotrechner.gui.qt_compat import changing_filter
 from brotrechner.i18n import format_number
 
 __all__ = ["COLUMNS", "IngredientFilterProxy", "IngredientTableModel"]
@@ -142,7 +144,7 @@ class IngredientTableModel(QAbstractTableModel):
         if role == INGREDIENT_ROLE:
             return ingredient
         if role == SORT_ROLE:
-            return _sort_value(ingredient, column)
+            return _sort_value(ingredient, column, self._severity.get(ingredient.key))
         if role == Qt.ItemDataRole.TextAlignmentRole and column.numeric:
             return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if role == Qt.ItemDataRole.ToolTipRole:
@@ -152,7 +154,7 @@ class IngredientTableModel(QAbstractTableModel):
         return None
 
 
-def _sort_value(ingredient: Ingredient, column: Column) -> Any:
+def _sort_value(ingredient: Ingredient, column: Column, severity: Severity | None) -> Any:
     """Roher, vergleichbarer Wert einer Zelle."""
     key = column.key
     if key == "name":
@@ -166,7 +168,9 @@ def _sort_value(ingredient: Ingredient, column: Column) -> Any:
     if key == "price_per_100g":
         return ingredient.price_per_100g
     if key == "status":
-        return 0
+        # Nach der Schwere des Befunds - bisher war der Wert immer 0, und die
+        # Spalte sortierte gar nicht.
+        return severity.rank if severity is not None else 0
     return float(getattr(ingredient.nutrients, key, 0.0))
 
 
@@ -199,6 +203,8 @@ def _tooltip(ingredient: Ingredient, severity: Severity | None) -> str:
     lines = [f"<b>{ingredient.display_name}</b>"]
     if ingredient.is_flour:
         lines.append("zählt beim Bäckerprozent als Mehl")
+    elif ingredient.flour_percent > 0:
+        lines.append(f"zählt zu {format_number(ingredient.flour_percent, 1)} % als Mehl")
     if ingredient.has_price:
         stand = (
             f", Stand {ingredient.price_updated.strftime('%d.%m.%Y')}"
@@ -213,6 +219,7 @@ def _tooltip(ingredient: Ingredient, severity: Severity | None) -> str:
             lines.append(f"Preisquelle: {ingredient.price_source}")
     else:
         lines.append("kein Preis hinterlegt")
+    lines.append(f"Allergene: {describe_allergens(ingredient.allergens)}")
     if severity is not None:
         lines.append(f"<i>Datenprüfung: {severity.label}</i>")
     if ingredient.notes:
@@ -234,21 +241,21 @@ class IngredientFilterProxy(QSortFilterProxyModel):
 
     def set_search(self, text: str) -> None:
         """Filtert über Name und Hersteller."""
-        self._search = text.strip().casefold()
-        self.invalidateFilter()
+        with changing_filter(self):
+            self._search = text.strip().casefold()
 
     def set_category(self, category: Category | None) -> None:
         """``None`` zeigt alle Kategorien."""
-        self._category = category
-        self.invalidateFilter()
+        with changing_filter(self):
+            self._category = category
 
     def set_only_without_price(self, active: bool) -> None:
-        self._only_without_price = active
-        self.invalidateFilter()
+        with changing_filter(self):
+            self._only_without_price = active
 
     def set_only_with_findings(self, active: bool) -> None:
-        self._only_with_findings = active
-        self.invalidateFilter()
+        with changing_filter(self):
+            self._only_with_findings = active
 
     def filterAcceptsRow(  # noqa: N802 - Qt-Vertrag
         self, source_row: int, source_parent: _Index

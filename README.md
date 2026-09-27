@@ -17,22 +17,57 @@ Läuft unter **Linux, Windows und macOS**.
 **Rechnen.** Zutaten zusammenstellen, Gewicht des fertigen Brots eintragen –
 Nährwerte je 100 g, Bäckerprozent, Teigausbeute, Hydration und Kosten stehen
 sofort daneben. Ohne Knopfdruck: Jede Änderung wird unmittelbar übernommen.
+Mit dem Gewicht einer Portion – Scheibe, Stück, Brötchen – kommen Nährwerte
+und Preis je Portion hinzu und wie viele Portionen das Brot ergibt.
+Sauerteig, Vorteig, Brüh-, Quell- und Kochstück sind eigene Stufen des
+Rezepts – mit dem, was je Stufe abzuwiegen ist, ihrer Teigausbeute und ihrem
+Anteil am Mehl.
 
-**Etikettieren.** Ein Nährwert-Etikett in vier Formaten und drei Farbstimmungen,
-mit Vorschau. Speichern, „Speichern unter“ oder direkt in den Druckdialog –
-ohne Umweg über eine Datei. Aufbau und Reihenfolge folgen Anhang XV der
+**Etikettieren.** Ein Nährwert-Etikett in vier Formaten oder einem eigenen
+(30 bis 297 mm je Seite) und drei Farbstimmungen, mit Vorschau. Speichern,
+„Speichern unter“ oder direkt in den Druckdialog – ohne Umweg über eine Datei
+und immer in Originalgröße: einzeln mitten aufs Blatt, am Etikettendrucker
+(auf Wunsch um 90° gedreht), auf Etikettenbögen nach den Maßen der Verpackung
+– auch ab dem ersten freien Etikett eines angebrochenen Bogens – oder zu
+mehreren auf A4 zum Ausschneiden. Aufbau und Reihenfolge folgen Anhang XV der
 VO (EU) Nr. 1169/2011. Backdatum und Mindesthaltbarkeit sind frei wählbar: Das
 Backdatum zieht die Haltbarkeit mit sich, eine von Hand gesetzte Haltbarkeit
-bleibt erhalten.
+bleibt erhalten. Das Zutatenverzeichnis folgt Artikel 18: absteigend nach
+Gewicht, zugefügtes Wasser nach seinem Anteil im fertigen Brot, gleichnamige
+Zutaten zusammengefasst, Allergene fett. Ohne Verzeichnis steht „Enthält: …“
+mit den Allergenen auf dem Etikett. Hat das Rezept eine Portion, zeigt die
+Nährwerttabelle zusätzlich die Werte je Portion samt der Zahl der Portionen
+(Artikel 33).
+
+**Verkaufen.** Mit „Etikett für den Verkauf“ prüft der Etikettdialog laufend
+die Pflichtangaben für verpackt verkauftes Brot (Artikel 9 VO (EU)
+Nr. 1169/2011): Bezeichnung, Zutatenverzeichnis mit erfassten Allergenen,
+Nettogewicht, Mindesthaltbarkeitsdatum sowie Name und Anschrift des
+Herstellers; ein Aufbewahrungshinweis ist möglich. Jede Schrift hat dann
+mindestens 1,2 mm x-Höhe (Artikel 13, Anhang IV), die Ziffern des Gewichts
+die Mindesthöhe der Fertigpackungsverordnung (bis 1 kg 4 mm, darüber 6 mm),
+und das Zutatenverzeichnis wird nicht gekürzt. Geprüft wird das gezeichnete
+Etikett in Druckauflösung, nicht nur die Eingaben. Offene Punkte stehen im
+Dialog; Speichern und Drucken fragen dann nach. Die Prüfung ersetzt keine
+Rechtsberatung.
 
 **Prüfen.** Eine eingebaute Plausibilitätsprüfung findet Datenfehler, bevor sie
 in einer Auswertung landen: verletzte Massenbilanz, ein Brennwert, der nicht zu
 den Nährstoffen passt, unmögliche Wassergehalte, Dubletten. Auch von der
-Kommandozeile aus, etwa in einer CI-Pipeline.
+Kommandozeile aus, etwa in einer CI-Pipeline. Ebenso fallen Gewichte auf, die
+nicht stimmen können – ein Brot, das schwerer ist als sein Teig oder leichter
+als die Trockenmasse der Zutaten. Mit einem solchen Tippfehler entsteht kein
+Etikett.
 
 **Verwalten.** Zutaten mit eigenem Herstellerfeld, Preisen samt Quelle und
 Preisstand, Preishistorie, Import und Export einzelner Zutaten als JSON,
-Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export.
+Rezeptverwaltung mit Skalierung, PDF-Bericht, CSV-Export der Zutaten und der
+Rezeptauswertung. Zu jeder Zutat gehören ihre **Allergene nach Anhang II** und
+die **Bezeichnung im Zutatenverzeichnis**, in der das Allergen markiert ist
+(`*Weizen*mehl Type 550`). Die Startdatenbank
+bringt beides für alle 107 Zutaten mit; wo es vom gekauften Produkt abhängt –
+Margarine, Essig, Trockenfrüchte, Oliven –, bleibt es bewusst „nicht erfasst“,
+bis jemand die Packung angesehen hat.
 
 **Nachhalten.** Notizen lassen sich jederzeit zu einem Rezept schreiben – was
 schiefging, welcher Kniff half. Jedes erstellte Etikett vermerkt seinen Backtag
@@ -44,6 +79,26 @@ zuletzt gebacken wurde.
 | ![Zutaten](docs/bilder/zutaten.png) | ![Etikett](docs/bilder/etikett.png) |
 
 ## Starten
+
+**Unter Windows ohne Python.** Das Programmpaket
+`Brotrechner-<Version>-windows.zip` enthält alles, was das Programm braucht –
+auch Python selbst. Entpacken, im Ordner `Brotrechner` auf `Brotrechner.exe`
+doppelklicken, fertig. Es hängt an jedem Release und entsteht bei jedem
+Versions-Tag in GitHub Actions („Windows-Paket“), wo es sich auch von Hand
+starten lässt. Die CI baut es außerdem bei jedem Pull Request und hält es eine
+Woche zum Ausprobieren bereit („Brotrechner-windows-test“). Jeder dieser
+Läufe prüft das fertige Paket: Kommandozeile, Datenprüfung, ein Etikett und
+ein PDF-Bericht mit `brotrechner-cli selftest`, das Qt-Plugin für Fenster und
+der Start der Oberfläche. Liegt neben `Brotrechner.exe` ein Ordner `data`,
+arbeitet das Programm portabel mit den Daten darin.
+
+Selbst bauen und prüfen – dasselbe Skript wie in der CI, Ergebnis in
+`dist\Brotrechner`:
+
+```bat
+pip install ".[pdf]" -r packaging\requirements.txt
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+```
 
 **Ohne Installation, per Doppelklick.** Im Hauptordner liegt die Datei
 **`Brotrechner starten.pyw`** – Doppelklick genügt. Die Endung `.pyw` ist unter
@@ -108,6 +163,7 @@ brotrechner check                # Datenprüfung, Exit-Code 1 bei Fehlern
 brotrechner check --strict       # auch Warnungen führen zu Exit-Code 1
 brotrechner export-csv out.csv   # Zutatendatenbank als CSV
 brotrechner info                 # Pfade und Bestand
+brotrechner selftest             # Etikett und PDF eines Beispielbrots - prüft die Installation
 brotrechner --data-dir ./daten   # abweichendes Datenverzeichnis
 ```
 
@@ -123,13 +179,21 @@ ein Programmupdate sie nie überschreibt:
 | macOS     | `~/Library/Application Support/Brotrechner`                  |
 
 Zwei Auswege: Die Umgebungsvariable `BROTRECHNER_DATA_DIR` setzt das
-Verzeichnis unabhängig vom System, und ein Ordner `data` neben dem
-Projektverzeichnis schaltet den *portablen Modus* ein – praktisch für den
-Betrieb vom USB-Stick.
+Verzeichnis unabhängig vom System, und ein Ordner `data` schaltet den
+*portablen Modus* ein – praktisch für den Betrieb vom USB-Stick. Beim Start
+aus dem Quelltext liegt er im Projektverzeichnis, im Windows-Paket neben
+`Brotrechner.exe`.
 
 Vor jedem Überschreiben legt das Programm eine Sicherung in `<Daten>/backups`
-an und hält die zehn jüngsten Stände. Geschrieben wird atomar: Ein Absturz
-mitten im Speichern kann keine halbe JSON-Datei hinterlassen.
+an und hält die zehn jüngsten Stände – aber nur, wenn sich der Inhalt wirklich
+ändert; „Datei → Sicherung anlegen“ sichert den jetzigen Stand. Geschrieben
+wird atomar: Ein Absturz mitten im Speichern kann keine halbe JSON-Datei
+hinterlassen. Ist eine Datei beim Start unlesbar, wird sie unverändert als
+`<Name>.defekt-<Zeitpunkt>.json` beiseitegelegt statt überschrieben.
+
+Warnungen und Fehler stehen in `<Daten>/brotrechner.log`, der Pfad auch unter
+„Hilfe → Über“. Ein unerwarteter Fehler erscheint zusätzlich als Meldung –
+beim Start per Doppelklick gibt es sonst keine Konsole, auf der er stünde.
 
 ### Übernahme aus der Vorgängerversion
 
@@ -143,12 +207,13 @@ liegen. Was dabei passiert, steht in
 
 | Größe | Definition |
 |---|---|
-| **Bäckerprozent** | Jede Zutat relativ zur Gesamtmehlmenge, die per Definition 100 % ist. Was als Mehl zählt, ist je Zutat ein ausdrückliches Feld – keine Namensheuristik. |
-| **Teigausbeute (TA)** | `(Mehl + Schüttwasser) / Mehl × 100`. Als Schüttwasser zählt das *tatsächlich enthaltene* Wasser aller Nicht-Mehl-Zutaten: 100 g Milch steuern 87,5 g bei, nicht 100 g. |
+| **Bäckerprozent** | Jede Zutat relativ zur Gesamtmehlmenge, die per Definition 100 % ist. Zur Mehlmenge trägt jede Zutat mit ihrem **Mehlanteil** bei: Mehl mit 100 %, ein Anstellgut aus gleichen Teilen Mehl und Wasser (TA 200) mit 50 %. Der Anteil ist je Zutat ein ausdrückliches Feld – keine Namensheuristik. |
+| **Teigausbeute (TA)** | `(Mehl + Schüttwasser) / Mehl × 100`. Als Schüttwasser zählt das *tatsächlich enthaltene* Wasser außerhalb des Mehlanteils: 100 g Milch steuern 87,5 g bei, nicht 100 g; 200 g Anstellgut (TA 200) zählen als 100 g Mehl und 100 g Wasser. Die Eigenfeuchte des Mehls (13 %) gehört zum Mehl. |
 | **Hydration** | `Schüttwasser / Mehl × 100`, also stets `TA − 100`. |
 | **Brennwert** | Berechnet nach Anhang XIV VO (EU) Nr. 1169/2011: Kohlenhydrate 4, Eiweiß 4, Fett 9, **Ballaststoffe 2 kcal/g**. Der Ballaststoffanteil fehlt auf vielen Etiketten. |
 | **Kohlenhydrate** | Nach EU-Konvention **ohne** Ballaststoffe. Wer Werte aus US-Quellen übernimmt, muss die Ballaststoffe vorher abziehen. |
-| **Toleranzen** | Tabelle 1 der EU-Guidance zu Deklarationstoleranzen, Dezember 2012. Für den Brennwert ist dort *keine* Toleranz definiert; er wird deshalb aus den Nährstoffgrenzen abgeleitet. |
+| **Rundung** | Etikett und PDF-Bericht runden nach der Leitlinie der EU-Kommission von Dezember 2012: Brennwert auf ganze kJ/kcal; Fett, Kohlenhydrate, Zucker, Eiweiß und Ballaststoffe ab 10 g auf ganze Gramm, darunter auf 0,1 g und bis 0,5 g als „< 0,5 g“; Salz ab 1 g auf 0,1 g, darunter auf 0,01 g. Halbe werden aufgerundet. Der Rechner zeigt die genauen Werte, die Etikettangabe steht im Tooltip. |
+| **Toleranzen** | Tabelle 1 der EU-Guidance zu Deklarationstoleranzen, Dezember 2012, angewandt auf die Werte des **fertigen Brots** – so, wie eine Kontrolle sie prüft. Für den Brennwert ist dort *keine* Toleranz definiert; er wird deshalb aus den Nährstoffgrenzen abgeleitet. |
 | **Referenzmengen** | Anhang XIII Teil B VO (EU) Nr. 1169/2011 (8400 kJ / 2000 kcal). Ballaststoffe haben dort keine Referenzmenge – verglichen wird mit dem DGE-Richtwert von 30 g/Tag. |
 | **Ampel** | Keine EU-Vorgabe, sondern die Kriterien der britischen Front-of-Pack-Kennzeichnung. Im Programm entsprechend gekennzeichnet. |
 
@@ -157,9 +222,10 @@ liegen. Was dabei passiert, steht in
 ```
 src/brotrechner/
 ├── core/        Fachlogik, ohne GUI und ohne Dateizugriff
-│   ├── nutrients.py    Nährwertvektor, Energieberechnung
+│   ├── nutrients.py    Nährwertvektor, Brennwertberechnung
 │   ├── models.py       Zutat, Rezept, Kategorien
-│   ├── analysis.py     Bäckerprozent, Teigausbeute, Kosten
+│   ├── analysis.py     Bäckerprozent, Teigausbeute, Kosten, Stufen
+│   ├── portions.py     Portionen: Nährwerte und Kosten je Scheibe
 │   ├── tolerances.py   EU-Deklarationstoleranzen
 │   ├── reference.py    Referenzmengen und Ampel
 │   └── validation.py   Plausibilitätsprüfung
@@ -167,6 +233,9 @@ src/brotrechner/
 ├── export/      PNG-Etikett, PDF-Bericht, CSV
 └── gui/         Qt-Oberfläche, enthält keine Fachlogik
 ```
+
+Daneben liegen in `packaging/` der Bauplan für das Windows-Paket und das
+Skript, das es baut und prüft.
 
 Die Schichten importieren ausschließlich „nach unten“: `gui` → `export`/`data`
 → `core`. Deshalb lässt sich die gesamte Rechnung ohne Qt testen, und `core`

@@ -5,7 +5,10 @@ Verzeichnis geschrieben und diese anschließend über ``os.replace`` an ihren
 Platz gezogen. Ein Absturz mitten im Speichern kann so keine halbe JSON-Datei
 hinterlassen - im schlimmsten Fall bleibt der vorherige Stand erhalten.
 
-Vor jedem Überschreiben wird zusätzlich eine rotierende Sicherung angelegt.
+Vor jedem Überschreiben wird zusätzlich eine rotierende Sicherung angelegt -
+aber nur, wenn sich der Inhalt wirklich ändert. Früher legte jedes Speichern
+eine an, auch das beim Beenden: Nach zehnmal Schließen ohne Änderung waren die
+zehn Sicherungen zehn gleiche Kopien, und jeder ältere Stand war verloren.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from collections.abc import Iterable, Iterator
@@ -32,9 +36,11 @@ __all__ = [
     "RecipeStore",
     "load_ingredients",
     "load_recipes",
+    "make_backup",
     "read_json",
     "save_ingredients",
     "save_recipes",
+    "set_aside",
     "write_json_atomic",
 ]
 
@@ -46,6 +52,28 @@ SCHEMA_VERSION: Final = 2
 
 #: Anzahl aufbewahrter Sicherungen je Datei.
 MAX_BACKUPS: Final = 10
+
+#: Schlüssel, die sich bei jedem Speichern ändern und deshalb nicht als
+#: Änderung des Inhalts zählen.
+_VOLATILE_KEYS: Final = ("updated_at",)
+
+#: Tiefste zulässige Verschachtelung von Listen und Objekten in einer
+#: JSON-Datei. Die eigenen Dateien kommen mit einer Handvoll Ebenen aus; die
+#: Grenze schützt beim Import fremder Dateien. Wann der JSON-Leser selbst an
+#: seine Rekursionsgrenze stößt, hängt von der Python-Version ab - Python
+#: 3.14 liest 60 000 Ebenen, frühere Versionen brechen nach etwa 1000 ab.
+MAX_JSON_NESTING: Final = 100
+
+#: Eine JSON-Zeichenkette. Das schließende Anführungszeichen ist optional:
+#: So endet jeder Treffer, ohne zurückzugehen, und auch eine kaputte Datei ist
+#: in linearer Zeit durchlaufen. Ihren Syntaxfehler meldet danach der JSON-Leser.
+_JSON_STRING: Final = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"?', re.DOTALL)
+_JSON_BRACKET: Final = re.compile(r"[\[\]{}]")
+
+#: Zutatenfelder, die erst nach Version 5.1 hinzugekommen sind. Fehlen sie in
+#: einem Eintrag, hat ihn ein älteres Programm geschrieben; die Datenschicht
+#: kann sie dann aus der Startdatenbank ergänzen (siehe ``seed``).
+TRACKED_INGREDIENT_FIELDS: Final[tuple[str, ...]] = ("flour_percent", "allergens")
 
 
 class RepositoryError(RuntimeError):
@@ -60,6 +88,11 @@ class LoadResult:
     """True, wenn die Datei im Altformat vorlag und übersetzt wurde."""
     notes: list[str] = field(default_factory=list)
     """Meldungen zu übersprungenen oder zusammengeführten Einträgen."""
+    missing_fields: dict[str, list[str]] = field(default_factory=dict)
+    """Je Feld aus :data:`TRACKED_INGREDIENT_FIELDS` die Schlüssel der
+    Einträge, denen es in der Datei fehlte."""
+    upgrades: list[str] = field(default_factory=list)
+    """Ergänzungen aus der Startdatenbank, die der Anwender einmal sehen soll."""
 
 
 # ── Container ──────────────────────────────────────────────────────────────
@@ -203,38 +236,63 @@ def read_json(path: Path) -> Any:
 
     Raises:
         RepositoryError: Bei Lese- oder Syntaxfehlern - mit Angabe der Zeile,
-            damit sich eine kaputte Datei von Hand reparieren lässt.
+            damit sich eine kaputte Datei von Hand reparieren lässt - und bei
+            mehr als :data:`MAX_JSON_NESTING` verschachtelten Ebenen.
     """
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise RepositoryError(f"{path} konnte nicht gelesen werden: {exc}") from exc
+    if _too_deep(text):
+        raise RepositoryError(
+            f"{path} ist zu tief verschachtelt (mehr als {MAX_JSON_NESTING} Ebenen) "
+            "und wurde nicht eingelesen"
+        )
     try:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise RepositoryError(
             f"{path} ist kein gültiges JSON (Zeile {exc.lineno}, Spalte {exc.colno}): {exc.msg}"
         ) from exc
-    except RecursionError as exc:
-        # Eine Datei mit zehntausenden verschachtelten Klammern bringt den
-        # JSON-Leser an die Rekursionsgrenze. Beim Import fremder Dateien darf
-        # das eine Fehlermeldung geben, aber nicht das Programm beenden.
-        raise RepositoryError(
-            f"{path} ist zu tief verschachtelt und wurde nicht eingelesen"
-        ) from exc
 
 
-def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:
+def _too_deep(text: str) -> bool:
+    """Ob Listen und Objekte tiefer als :data:`MAX_JSON_NESTING` verschachtelt sind.
+
+    Klammern in Zeichenketten zählen nicht. Die Prüfung endet an der ersten
+    Klammer über der Grenze, auch in einer riesigen Datei.
+    """
+    depth = 0
+    for bracket in _JSON_BRACKET.finditer(_JSON_STRING.sub("", text)):
+        depth += 1 if bracket.group() in "[{" else -1
+        if depth > MAX_JSON_NESTING:
+            return True
+    return False
+
+
+def write_json_atomic(
+    path: Path, payload: Any, *, backup: bool = True, volatile: Iterable[str] = ()
+) -> bool:
     """Schreibt JSON atomar und legt vorher eine Sicherung an.
+
+    Steht derselbe Inhalt schon in der Datei, wird weder geschrieben noch
+    gesichert.
 
     Args:
         path: Zieldatei.
         payload: JSON-serialisierbares Objekt.
         backup: Vorherigen Stand sichern, falls die Datei existiert.
+        volatile: Schlüssel der obersten Ebene, die beim Vergleich nicht
+            zählen - etwa ein Zeitstempel, der sich bei jedem Speichern ändert.
+
+    Returns:
+        ``True``, wenn geschrieben wurde; ``False``, wenn der Inhalt gleich war.
 
     Raises:
         RepositoryError: Wenn das Schreiben fehlschlägt.
     """
+    if _unchanged(path, payload, frozenset(volatile)):
+        return False
     tmp_path: Path | None = None
     try:
         # Auch das Anlegen des Verzeichnisses gehört in die Fehlerbehandlung:
@@ -261,27 +319,125 @@ def write_json_atomic(path: Path, payload: Any, *, backup: bool = True) -> None:
     finally:
         if tmp_path is not None and tmp_path.exists():
             tmp_path.unlink(missing_ok=True)
+    return True
 
 
-def _rotate_backup(path: Path) -> None:
+def _unchanged(path: Path, payload: Any, volatile: frozenset[str]) -> bool:
+    """Steht der Inhalt schon so in der Datei?
+
+    Verglichen wird nach einem Umweg über JSON: Aus einem Tupel wird dabei eine
+    Liste, genau wie beim Schreiben. Eine unlesbare Datei gilt als geändert -
+    sie wird dann gesichert und ersetzt.
+    """
+    if not path.exists():
+        return False
+    try:
+        current = json.loads(path.read_text(encoding="utf-8"))
+        wanted = json.loads(json.dumps(payload, ensure_ascii=False))
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    return bool(_without(current, volatile) == _without(wanted, volatile))
+
+
+def _without(data: Any, keys: frozenset[str]) -> Any:
+    """Ein JSON-Objekt ohne die genannten Schlüssel der obersten Ebene."""
+    if isinstance(data, dict):
+        return {key: value for key, value in data.items() if key not in keys}
+    return data
+
+
+def make_backup(path: Path) -> Path | None:
+    """Sichert den jetzigen Stand einer Datei, etwa auf ausdrücklichen Wunsch.
+
+    Returns:
+        Die Sicherung - auch eine schon vorhandene mit gleichem Inhalt - oder
+        ``None``, wenn die Datei fehlt oder das Sichern scheiterte.
+    """
+    if not path.exists():
+        return None
+    return _rotate_backup(path)
+
+
+def _rotate_backup(path: Path) -> Path | None:
     """Legt eine Sicherung an und hält nur die jüngsten :data:`MAX_BACKUPS`.
 
     Die Sicherungen liegen in ``backups`` **neben** der gesicherten Datei, nicht
     in einem festen Verzeichnis. Damit stimmt der Ablageort auch dann, wenn das
     Programm mit ``--data-dir`` auf ein anderes Verzeichnis gerichtet wurde.
+
+    Gleicht die Datei der jüngsten Sicherung, entsteht keine zweite Kopie -
+    sie würde nur einen älteren Stand aus der Rotation drängen.
+
+    Returns:
+        Die Sicherung oder ``None``, wenn sie scheiterte.
     """
     try:
         target_dir = path.parent / "backups"
         target_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        shutil.copy2(path, target_dir / f"{path.stem}_{stamp}{path.suffix}")
-
-        existing = sorted(target_dir.glob(f"{path.stem}_*{path.suffix}"))
-        for stale in existing[:-MAX_BACKUPS]:
+        existing = _backups_of(path, target_dir)
+        if existing and existing[-1].read_bytes() == path.read_bytes():
+            return existing[-1]
+        target = _free_backup_name(path, target_dir)
+        shutil.copy2(path, target)
+        for stale in _backups_of(path, target_dir)[:-MAX_BACKUPS]:
             stale.unlink(missing_ok=True)
     except OSError as exc:
         # Eine fehlgeschlagene Sicherung darf das Speichern nicht verhindern.
         log.warning("Sicherung von %s fehlgeschlagen: %s", path, exc)
+        return None
+    return target
+
+
+def set_aside(path: Path) -> Path | None:
+    """Legt eine unlesbare Datei unverändert beiseite, neben ihren alten Platz.
+
+    Aus ``ingredients.json`` wird etwa ``ingredients.defekt-20260925_101500.json``.
+    Das Programm kann dann mit einer neuen Datei weiterarbeiten, ohne die alte
+    je zu überschreiben - sie bleibt zum Reparieren liegen, und anders als eine
+    Sicherung verschwindet sie nicht aus der Rotation.
+
+    Returns:
+        Der neue Name oder ``None``, wenn die Datei nicht umbenannt werden
+        konnte; sie liegt dann unverändert an ihrem alten Platz.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    target = path.with_name(f"{path.stem}.defekt-{stamp}{path.suffix}")
+    counter = 1
+    while target.exists():
+        target = path.with_name(f"{path.stem}.defekt-{stamp}_{counter:03d}{path.suffix}")
+        counter += 1
+    try:
+        path.rename(target)
+    except OSError as exc:
+        log.warning("%s ließ sich nicht beiseitelegen: %s", path, exc)
+        return None
+    return target
+
+
+def _backups_of(path: Path, target_dir: Path) -> list[Path]:
+    """Sicherungen einer Datei, die älteste zuerst.
+
+    Die Namen tragen einen Zeitstempel fester Breite; ihre alphabetische
+    Reihenfolge ist deshalb die zeitliche - auch gegenüber älteren Namen ohne
+    Mikrosekunden.
+    """
+    return sorted(target_dir.glob(f"{path.stem}_*{path.suffix}"))
+
+
+def _free_backup_name(path: Path, target_dir: Path) -> Path:
+    """Ein freier Name für die nächste Sicherung.
+
+    Bisher trug der Name nur Sekunden: Zwei Speichervorgänge in derselben
+    Sekunde schrieben dieselbe Sicherung, und der ältere Stand ging verloren.
+    Jetzt mit Mikrosekunden und, sollte selbst das gleich sein, mit Zähler.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    candidate = target_dir / f"{path.stem}_{stamp}{path.suffix}"
+    counter = 1
+    while candidate.exists():
+        candidate = target_dir / f"{path.stem}_{stamp}_{counter:03d}{path.suffix}"
+        counter += 1
+    return candidate
 
 
 # ── Zutaten ────────────────────────────────────────────────────────────────
@@ -331,22 +487,31 @@ def load_ingredients(path: Path) -> tuple[IngredientStore, LoadResult]:
             result.notes.append(f"Eintrag #{index} übersprungen: kein Objekt")
             continue
         try:
-            ingredients.append(Ingredient.from_dict(entry))
+            ingredient = Ingredient.from_dict(entry)
         except ValueError as exc:
             result.notes.append(f"Eintrag #{index} übersprungen: {exc}")
+            continue
+        ingredients.append(ingredient)
+        for name in TRACKED_INGREDIENT_FIELDS:
+            if name not in entry:
+                result.missing_fields.setdefault(name, []).append(ingredient.key)
 
     return IngredientStore(ingredients), result
 
 
-def save_ingredients(path: Path, store: IngredientStore) -> None:
-    """Speichert die Zutatendatenbank atomar."""
+def save_ingredients(path: Path, store: IngredientStore) -> bool:
+    """Speichert die Zutatendatenbank atomar - nur wenn sich etwas geändert hat.
+
+    Returns:
+        ``True``, wenn geschrieben wurde.
+    """
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generator": f"brotrechner {__version__}",
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "ingredients": [i.to_dict() for i in store.sorted()],
     }
-    write_json_atomic(path, payload)
+    return write_json_atomic(path, payload, volatile=_VOLATILE_KEYS)
 
 
 # ── Rezepte ────────────────────────────────────────────────────────────────
@@ -404,12 +569,16 @@ def load_recipes(path: Path, ingredients: IngredientStore) -> tuple[RecipeStore,
     return RecipeStore(recipes), result
 
 
-def save_recipes(path: Path, store: RecipeStore) -> None:
-    """Speichert die Rezeptdatenbank atomar."""
+def save_recipes(path: Path, store: RecipeStore) -> bool:
+    """Speichert die Rezeptdatenbank atomar - nur wenn sich etwas geändert hat.
+
+    Returns:
+        ``True``, wenn geschrieben wurde.
+    """
     payload = {
         "schema_version": SCHEMA_VERSION,
         "generator": f"brotrechner {__version__}",
         "updated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "recipes": [r.to_dict() for r in store.sorted_by_date()],
     }
-    write_json_atomic(path, payload)
+    return write_json_atomic(path, payload, volatile=_VOLATILE_KEYS)

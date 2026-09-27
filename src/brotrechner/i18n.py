@@ -31,8 +31,10 @@ NUTRIENT_ORDER: Final[tuple[str, ...]] = (
     "salt",
 )
 
+#: Bezeichnungen wie in der deutschen Fassung der VO (EU) Nr. 1169/2011
+#: (Artikel 30, Anhang XV): Dort heißt es "Brennwert", nicht "Energie".
 NUTRIENT_LABELS: Final[dict[str, str]] = {
-    "energy_kcal": "Energie",
+    "energy_kcal": "Brennwert",
     "fat": "Fett",
     "saturated_fat": "davon gesättigte Fettsäuren",
     "carbs": "Kohlenhydrate",

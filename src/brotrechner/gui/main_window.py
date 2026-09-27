@@ -32,19 +32,21 @@ from PySide6.QtWidgets import (
 
 from brotrechner import __version__, paths
 from brotrechner.core.analysis import RecipeAnalysis
-from brotrechner.core.models import Ingredient, Recipe
+from brotrechner.core.models import Ingredient, Recipe, normalize_key_part
 from brotrechner.core.validation import Severity, validate_database
 from brotrechner.data import portable
 from brotrechner.data.repository import (
     IngredientStore,
+    LoadResult,
     RecipeStore,
     RepositoryError,
-    load_ingredients,
     load_recipes,
+    make_backup,
     save_ingredients,
     save_recipes,
+    set_aside,
 )
-from brotrechner.data.seed import ensure_user_database
+from brotrechner.data.seed import SeedResult, ensure_user_database, load_user_ingredients
 from brotrechner.export import report, table
 from brotrechner.gui.dialogs.ingredient_dialog import IngredientDialog
 from brotrechner.gui.dialogs.label_dialog import LabelDialog
@@ -61,6 +63,7 @@ from brotrechner.gui.pages.recipes import RecipesPage
 from brotrechner.gui.qt_compat import confirmed
 from brotrechner.gui.theme import SPACING, ThemeMode, Tokens, build_stylesheet, resolve_tokens
 from brotrechner.gui.widgets.cards import ClickableLabel
+from brotrechner.i18n import format_number
 from brotrechner.settings import Settings, load_settings, save_settings
 
 __all__ = ["MainWindow"]
@@ -72,6 +75,12 @@ _PAGES: tuple[tuple[str, str, str], ...] = (
     ("Zutaten", "Zutatendatenbank pflegen", "🌾"),
     ("Rezepte", "Gespeicherte Rezepte", "📖"),
 )
+
+
+def _file_stem(name: str, fallback: str) -> str:
+    """Dateiname ohne Endung aus einem Rezeptnamen - ohne Pfadtrenner und Sonderzeichen."""
+    safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip()
+    return safe or fallback
 
 
 class MainWindow(QMainWindow):
@@ -89,6 +98,9 @@ class MainWindow(QMainWindow):
         self._ingredients = IngredientStore()
         self._recipes = RecipeStore()
         self._analysis = RecipeAnalysis()
+        # Unlesbare Dateien, die sich nicht beiseitelegen ließen: In sie wird
+        # in dieser Sitzung nicht geschrieben, damit sie erhalten bleiben.
+        self._protected: set[Path] = set()
 
         self.setWindowTitle(f"Brotrechner {__version__}")
         self.setMinimumSize(QSize(1120, 720))
@@ -98,6 +110,7 @@ class MainWindow(QMainWindow):
         self._apply_theme()
         self._restore_geometry()
         self._load_data()
+        self._restore_energy_price()
 
     # ── Aufbau ────────────────────────────────────────────────────────────
 
@@ -191,8 +204,10 @@ class MainWindow(QMainWindow):
         self._add_action(
             file_menu, "Datenverzeichnis öffnen", self._on_open_data_dir, "Ctrl+Shift+O"
         )
+        self._add_action(file_menu, "Ausgabeordner wählen …", self._on_choose_export_dir)
         file_menu.addSeparator()
         self._add_action(file_menu, "Zutaten als CSV …", self._on_export_csv)
+        self._add_action(file_menu, "Auswertung als CSV …", self._on_export_analysis_csv)
         self._add_action(file_menu, "PDF-Bericht …", self._on_report, "Ctrl+P")
         self._add_action(file_menu, "Etikett …", self._on_label, "Ctrl+E")
         file_menu.addSeparator()
@@ -262,26 +277,16 @@ class MainWindow(QMainWindow):
     # ── Daten laden und speichern ─────────────────────────────────────────
 
     def _load_data(self) -> None:
-        """Lädt Zutaten und Rezepte, legt sie beim ersten Start an."""
-        try:
-            seed = ensure_user_database(
-                self._ingredients_path,
-                self._recipes_path,
-                legacy_dir=Path.cwd(),
-            )
-            self._ingredients, ingredient_result = load_ingredients(self._ingredients_path)
-            self._recipes, recipe_result = load_recipes(self._recipes_path, self._ingredients)
-        except RepositoryError as exc:
-            QMessageBox.critical(
-                self,
-                "Daten konnten nicht geladen werden",
-                f"{exc}\n\nDas Programm startet mit leerer Datenbank. Die vorhandene "
-                f"Datei wurde nicht verändert - eine Sicherung liegt in\n"
-                f"{paths.backup_dir(self._data_dir)}",
-            )
-            self._ingredients, self._recipes = IngredientStore(), RecipeStore()
-            self._refresh_all()
-            return
+        """Lädt Zutaten und Rezepte, legt sie beim ersten Start an.
+
+        Eine unlesbare Datei wird beiseitegelegt, statt sie beim Beenden zu
+        überschreiben. Früher startete das Programm dann leer, versprach, die
+        Datei nicht zu verändern - und schrieb beim Schließen die leere
+        Datenbank darüber.
+        """
+        seed = self._ensure_database()
+        self._ingredients, ingredient_result = self._load_ingredient_file()
+        self._recipes, recipe_result = self._load_recipe_file()
 
         notes = list(seed.notes) + ingredient_result.notes + recipe_result.notes
         self._refresh_all()
@@ -295,13 +300,89 @@ class MainWindow(QMainWindow):
                 + f"\n\nDie Daten liegen ab jetzt in\n{self._data_dir}\n\n"
                 "Die alten Dateien bleiben unverändert liegen.",
             )
-        elif notes:
+        elif ingredient_result.upgrades:
+            # Einmalig nach einem Update: Die Ergänzungen verändern die
+            # Auswertung gespeicherter Rezepte, das soll nicht unbemerkt bleiben.
+            QMessageBox.information(
+                self,
+                "Zutatendatenbank ergänzt",
+                "Beim Laden wurde die Zutatendatenbank auf den neuen Stand gebracht:\n\n"
+                + "\n".join(f"• {note}" for note in ingredient_result.upgrades),
+            )
+        if notes and not seed.imported_from_legacy:
             log.info("Hinweise beim Laden: %s", notes)
 
         self._flash(f"{len(self._ingredients)} Zutaten, {len(self._recipes)} Rezepte geladen")
 
+    def _ensure_database(self) -> SeedResult:
+        """Legt fehlende Dateien an - aus dem Altbestand oder der Startdatenbank."""
+        try:
+            return ensure_user_database(
+                self._ingredients_path,
+                self._recipes_path,
+                legacy_dir=Path.cwd(),
+            )
+        except RepositoryError as exc:
+            QMessageBox.critical(self, "Daten konnten nicht angelegt werden", str(exc))
+            return SeedResult()
+
+    def _load_ingredient_file(self) -> tuple[IngredientStore, LoadResult]:
+        """Lädt die Zutaten; eine unlesbare Datei wird durch die Startdatenbank ersetzt."""
+        try:
+            return load_user_ingredients(self._ingredients_path)
+        except RepositoryError as exc:
+            consequence = "Die Zutaten werden neu aus der Startdatenbank angelegt."
+            if not self._set_aside_unreadable(self._ingredients_path, exc, consequence):
+                return IngredientStore(), LoadResult()
+        self._ensure_database()
+        try:
+            return load_user_ingredients(self._ingredients_path)
+        except RepositoryError as exc:  # pragma: no cover - frisch angelegte Datei
+            log.warning("Neu angelegte Zutatendatenbank nicht lesbar: %s", exc)
+            return IngredientStore(), LoadResult()
+
+    def _load_recipe_file(self) -> tuple[RecipeStore, LoadResult]:
+        """Lädt die Rezepte; ohne lesbare Datei startet das Programm ohne Rezepte."""
+        try:
+            return load_recipes(self._recipes_path, self._ingredients)
+        except RepositoryError as exc:
+            self._set_aside_unreadable(
+                self._recipes_path, exc, "Das Programm startet ohne Rezepte."
+            )
+            return RecipeStore(), LoadResult()
+
+    def _set_aside_unreadable(self, path: Path, exc: RepositoryError, consequence: str) -> bool:
+        """Legt eine unlesbare Datei beiseite und sagt, wo sie liegt.
+
+        Returns:
+            ``True``, wenn sie beiseiteliegt; sonst wird sie in dieser Sitzung
+            vor dem Überschreiben geschützt.
+        """
+        aside = set_aside(path)
+        if aside is None:
+            self._protected.add(path)
+            QMessageBox.critical(
+                self,
+                "Daten konnten nicht geladen werden",
+                f"{exc}\n\nDie Datei ließ sich nicht beiseitelegen. Damit sie erhalten "
+                f"bleibt, schreibt das Programm in dieser Sitzung nicht in {path.name} - "
+                "Änderungen daran gehen beim Beenden verloren.",
+            )
+            return False
+        QMessageBox.critical(
+            self,
+            "Daten konnten nicht geladen werden",
+            f"{exc}\n\nDie Datei liegt unverändert unter\n{aside}\n\n{consequence} "
+            f"Um den alten Stand zurückzuholen: die Datei reparieren und bei geschlossenem "
+            f"Programm wieder in {path.name} umbenennen.",
+        )
+        return True
+
     def _save_ingredients(self) -> bool:
         """Schreibt die Zutatendatenbank; meldet Fehler an den Anwender."""
+        if self._ingredients_path in self._protected:
+            log.warning("%s bleibt geschützt und wird nicht geschrieben", self._ingredients_path)
+            return True
         try:
             save_ingredients(self._ingredients_path, self._ingredients)
         except RepositoryError as exc:
@@ -310,6 +391,10 @@ class MainWindow(QMainWindow):
         return True
 
     def _save_recipes(self) -> bool:
+        """Schreibt die Rezeptdatenbank; meldet Fehler an den Anwender."""
+        if self._recipes_path in self._protected:
+            log.warning("%s bleibt geschützt und wird nicht geschrieben", self._recipes_path)
+            return True
         try:
             save_recipes(self._recipes_path, self._recipes)
         except RepositoryError as exc:
@@ -438,24 +523,56 @@ class MainWindow(QMainWindow):
         else:
             self.btn_label.setToolTip("Etikett anzeigen, speichern oder drucken")
 
+    def _confirm_discard(self) -> bool:
+        """Fragt nach, bevor ungespeicherte Arbeit im Rechner verloren geht.
+
+        Bisher verwarfen „Neu / leeren“, das Laden eines anderen Rezepts und
+        das Beenden den Rechner ohne ein Wort.
+
+        Returns:
+            ``True``, wenn weitergemacht werden darf.
+        """
+        page = self.page_calculator
+        if not page.has_unsaved_changes:
+            return True
+        buttons = QMessageBox.StandardButton
+        answer = QMessageBox.question(
+            self,
+            "Ungespeicherte Änderungen",
+            f"„{page.recipe_name}“ im Rechner hat ungespeicherte Änderungen.\n\nVorher speichern?",
+            buttons.Save | buttons.Discard | buttons.Cancel,
+            buttons.Save,
+        )
+        if confirmed(answer, buttons.Save):
+            return self._on_save_recipe()
+        # Abbrechen, Escape und jede unerwartete Antwort lassen alles, wie es ist.
+        return confirmed(answer, buttons.Discard)
+
     def _on_new_recipe(self) -> None:
+        if not self._confirm_discard():
+            return
         self.page_calculator.clear()
         self.nav.setCurrentRow(0)
         self._flash("Rechner geleert")
 
-    def _on_save_recipe(self) -> None:
+    def _on_save_recipe(self) -> bool:
+        """Speichert den Rechner als Rezept.
+
+        Returns:
+            ``True``, wenn gespeichert wurde.
+        """
         recipe = self.page_calculator.to_recipe()
         if not recipe.items:
             QMessageBox.information(
                 self, "Nichts zu speichern", "Bitte zuerst Zutaten in den Rechner eintragen."
             )
-            return
+            return False
 
         name, accepted = QInputDialog.getText(
             self, "Rezept speichern", "Name des Rezepts:", text=recipe.name
         )
         if not accepted or not name.strip():
-            return
+            return False
         recipe.name = name.strip()
 
         if recipe.name in self._recipes:
@@ -468,7 +585,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.No,
             )
             if not confirmed(answer):
-                return
+                return False
             existing = self._recipes.get(recipe.name)
             if existing is not None:
                 # Was nicht aus dem Rechner kommt, gehört zur Geschichte des
@@ -483,17 +600,24 @@ class MainWindow(QMainWindow):
             recipe.notes = notes_dialog.notes
 
         self._recipes.add(recipe, replace_existing=True)
-        if self._save_recipes():
-            self._refresh_all()
-            # Auf die Rezepteseite wechseln und den frischen Eintrag markieren:
-            # Ohne diese Rückmeldung bleibt offen, ob das Speichern geklappt hat.
-            self.nav.setCurrentRow(2)
-            self.page_recipes.select_recipe(recipe.name)
-            self._flash(f"Rezept „{recipe.name}“ gespeichert in {self._recipes_path}")
+        if not self._save_recipes():
+            return False
+        # Der Rechner trägt jetzt den gespeicherten Namen - und gilt als gespeichert.
+        self.page_calculator.txt_name.setText(recipe.name)
+        self.page_calculator.mark_saved()
+        self._refresh_all()
+        # Auf die Rezepteseite wechseln und den frischen Eintrag markieren:
+        # Ohne diese Rückmeldung bleibt offen, ob das Speichern geklappt hat.
+        self.nav.setCurrentRow(2)
+        self.page_recipes.select_recipe(recipe.name)
+        self._flash(f"Rezept „{recipe.name}“ gespeichert in {self._recipes_path}")
+        return True
 
     def _on_load_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)
         if recipe is None:  # pragma: no cover - Liste war veraltet
+            return
+        if not self._confirm_discard():
             return
         missing = self.page_calculator.load_recipe(recipe)
         self.nav.setCurrentRow(0)
@@ -532,7 +656,7 @@ class MainWindow(QMainWindow):
         self._recipes.add(scaled)
         if self._save_recipes():
             self._refresh_all()
-            self._flash(f"„{scaled.name}“ angelegt (Faktor {dialog.factor:.3f})")
+            self._flash(f"„{scaled.name}“ angelegt (Faktor {format_number(dialog.factor, 3)})")
 
     def _on_rename_recipe(self, name: str) -> None:
         recipe = self._recipes.get(name)
@@ -544,17 +668,36 @@ class MainWindow(QMainWindow):
         new_name = new_name.strip()
         if not accepted or not new_name or new_name == recipe.name:
             return
-        if new_name in self._recipes:
+        # Namen gelten ohne Rücksicht auf Groß- und Kleinschreibung als gleich.
+        # "roggenbrot" in "Roggenbrot" umzubenennen, stieß deshalb früher auf
+        # das Rezept selbst und wurde als "Name vergeben" abgelehnt.
+        if self._recipes.get(new_name) not in (None, recipe):
             QMessageBox.warning(
                 self, "Name vergeben", f"Es gibt bereits ein Rezept namens „{new_name}“."
             )
             return
-        self._recipes.remove(recipe.name)
+        old_name = recipe.name
+        self._recipes.remove(old_name)
         recipe.name = new_name
         self._recipes.add(recipe)
         if self._save_recipes():
+            self._follow_rename(old_name, new_name)
             self._refresh_all()
             self._flash(f"Umbenannt in „{new_name}“")
+
+    def _follow_rename(self, old_name: str, new_name: str) -> None:
+        """Übernimmt einen neuen Rezeptnamen in den Rechner, falls es dort geladen ist.
+
+        Sonst legte das nächste Speichern ein Duplikat unter dem alten Namen an.
+        Ob der Rechner danach als gespeichert gilt, ändert der Name allein nicht.
+        """
+        page = self.page_calculator
+        if normalize_key_part(page.txt_name.text()) != normalize_key_part(old_name):
+            return
+        unchanged = not page.has_unsaved_changes
+        page.txt_name.setText(new_name)
+        if unchanged:
+            page.mark_saved()
 
     def _on_recipe_notes(self, name: str) -> None:
         """Notizen eines gespeicherten Rezepts nachträglich bearbeiten.
@@ -752,16 +895,69 @@ class MainWindow(QMainWindow):
             return
         self._flash(f"{count} Zutaten nach {Path(target).name} exportiert")
 
+    def _on_export_analysis_csv(self) -> None:
+        """Speichert die Auswertung des Rezepts im Rechner - zum Weiterrechnen in Excel."""
+        if self._analysis.is_empty:
+            QMessageBox.information(
+                self, "Kein Rezept", "Bitte zuerst Zutaten in den Rechner eintragen."
+            )
+            return
+        name = self.page_calculator.recipe_name
+        target, _ = QFileDialog.getSaveFileName(
+            self,
+            "Auswertung als CSV",
+            str(self._export_dir() / f"{_file_stem(name, 'Auswertung')}.csv"),
+            "CSV-Datei (*.csv)",
+        )
+        if not target:
+            return
+        path = Path(target)
+        if path.suffix.lower() != ".csv":
+            path = path.with_suffix(".csv")
+        try:
+            count = table.write_analysis_csv(path, self._analysis, recipe_name=name)
+        except OSError as exc:
+            QMessageBox.critical(self, "Export fehlgeschlagen", str(exc))
+            return
+        self._flash(f"Auswertung ({count} Zutaten) nach {path.name} exportiert")
+
     def _on_validate(self) -> None:
         findings = validate_database(self._ingredients)
         ValidationDialog(findings, self._tokens, self).exec()
 
     # ── Ausgabe ───────────────────────────────────────────────────────────
 
+    def _restore_energy_price(self) -> None:
+        """Setzt den gemerkten Strompreis und merkt sich jede Änderung.
+
+        Bisher stand der Preis zwar in den Einstellungen, der Rechner begann
+        aber bei jedem Start wieder mit der Vorgabe.
+        """
+        spin = self.page_calculator.spin_price
+        spin.setValue(self._settings.energy_price)
+        spin.valueChanged.connect(self._on_energy_price_changed)
+
+    def _on_energy_price_changed(self, price: float) -> None:
+        self._settings.energy_price = price
+
+    def _save_settings(self) -> None:
+        save_settings(self._settings_path, self._settings)
+
+    def _on_choose_export_dir(self) -> None:
+        """Legt den Ordner fest, in dem Etiketten, Berichte und CSV landen."""
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Ausgabeordner wählen", str(self._export_dir())
+        )
+        if not chosen:
+            return
+        self._settings.export_dir = chosen
+        self._save_settings()
+        self._flash(f"Ausgaben landen jetzt in {chosen}")
+
     def _export_dir(self) -> Path:
         """Standardordner für Ausgaben, bei Bedarf angelegt."""
         configured = self._settings.export_dir
-        path = Path(configured) if configured else paths.default_export_dir()
+        path = Path(configured) if configured else paths.default_export_dir(self._data_dir)
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError:  # pragma: no cover - z. B. schreibgeschützt
@@ -783,9 +979,14 @@ class MainWindow(QMainWindow):
             recipe_name=name,
             default_dir=self._export_dir(),
             last_baked_on=stored.last_baked_on if stored else None,
+            last_best_before=stored.last_best_before if stored else None,
+            preferences=self._settings.label,
             parent=self,
         )
         dialog.exec()
+        # Gestaltung, Verkauf und Druck gelten auch beim nächsten Etikett.
+        self._settings.label = dialog.preferences()
+        self._save_settings()
         self._record_baking_day(stored, dialog)
 
     def _record_baking_day(self, recipe: Recipe | None, dialog: LabelDialog) -> None:
@@ -812,11 +1013,10 @@ class MainWindow(QMainWindow):
             )
             return
         name = self.page_calculator.recipe_name
-        safe = "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip()
         target, _ = QFileDialog.getSaveFileName(
             self,
             "PDF-Bericht speichern",
-            str(self._export_dir() / f"{safe or 'Bericht'}.pdf"),
+            str(self._export_dir() / f"{_file_stem(name, 'Bericht')}.pdf"),
             "PDF-Datei (*.pdf)",
         )
         if not target:
@@ -824,8 +1024,13 @@ class MainWindow(QMainWindow):
         path = Path(target)
         if path.suffix.lower() != ".pdf":
             path = path.with_suffix(".pdf")
+        # Erfahrungen zum Rezept gehören in seinen Bericht - bisher kamen die
+        # Notizen dort nie an, obwohl der Bericht sie drucken kann.
+        stored = self._recipes.get(name)
         try:
-            report.write_report(path, self._analysis, recipe_name=name)
+            report.write_report(
+                path, self._analysis, recipe_name=name, notes=stored.notes if stored else ""
+            )
         except report.ReportError as exc:
             QMessageBox.critical(self, "Bericht fehlgeschlagen", str(exc))
             return
@@ -834,14 +1039,28 @@ class MainWindow(QMainWindow):
     # ── Sonstiges ─────────────────────────────────────────────────────────
 
     def _on_backup(self) -> None:
-        ok = self._save_ingredients() and self._save_recipes()
-        if ok:
-            QMessageBox.information(
+        """Speichert und sichert den jetzigen Stand beider Dateien.
+
+        Bisher sicherte der Menüpunkt nur den *vorherigen* Stand - und nur,
+        wenn beim Speichern tatsächlich geschrieben wurde.
+        """
+        if not (self._save_ingredients() and self._save_recipes()):
+            return
+        made = [make_backup(path) for path in (self._ingredients_path, self._recipes_path)]
+        folder = paths.backup_dir(self._data_dir)
+        if any(backup is None for backup in made):
+            QMessageBox.warning(
                 self,
-                "Sicherung angelegt",
-                f"Zutaten und Rezepte wurden gespeichert. Die vorherigen Stände liegen in\n\n"
-                f"{paths.backup_dir(self._data_dir)}",
+                "Sicherung unvollständig",
+                f"Nicht jede Datei ließ sich sichern. Bitte prüfen, ob in\n\n{folder}\n\n"
+                "geschrieben werden darf.",
             )
+            return
+        QMessageBox.information(
+            self,
+            "Sicherung angelegt",
+            f"Der jetzige Stand von Zutaten und Rezepten liegt in\n\n{folder}",
+        )
 
     def _on_open_data_dir(self) -> None:
         from PySide6.QtCore import QUrl  # noqa: PLC0415 - nur hier gebraucht
@@ -859,11 +1078,14 @@ class MainWindow(QMainWindow):
         ).exec()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt-Vertrag
-        """Speichert Einstellungen und Daten beim Beenden."""
+        """Speichert Einstellungen und Daten beim Beenden - nach Rückfrage."""
+        if not self._confirm_discard():
+            event.ignore()
+            return
         self._settings.window_geometry = bytes(self.saveGeometry().toBase64().data()).decode(
             "ascii"
         )
-        save_settings(self._settings_path, self._settings)
+        self._save_settings()
         self._save_ingredients()
         self._save_recipes()
         super().closeEvent(event)

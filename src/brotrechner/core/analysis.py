@@ -9,12 +9,14 @@ Fachliche Definitionen
 ----------------------
 
 **Bäckerprozent** - jede Zutat relativ zur Gesamtmehlmenge, die per Definition
-100 % ist. Als Mehl zählt, was in der Zutat ausdrücklich als Mehl markiert ist
-(:attr:`~brotrechner.core.models.Ingredient.is_flour`).
+100 % ist. Zur Mehlmenge trägt jede Zutat mit ihrem ausdrücklich hinterlegten
+Mehlanteil bei (:attr:`~brotrechner.core.models.Ingredient.flour_percent`):
+Mehl mit 100 %, ein Anstellgut aus gleichen Teilen Mehl und Wasser mit 50 %.
 
 **Teigausbeute (TA)** - ``(Mehl + Schüttwasser) / Mehl × 100``. Als Schüttwasser
-zählt hier das *tatsächlich enthaltene Wasser* aller Nicht-Mehl-Zutaten, also
-z. B. 87,5 g je 100 g Milch statt der vollen 100 g.
+zählt das *tatsächlich enthaltene Wasser* außerhalb des Mehlanteils, also
+z. B. 87,5 g je 100 g Milch statt der vollen 100 g. Die Eigenfeuchte des
+Mehlanteils gehört zum Mehl - bei reinem Mehl ebenso wie im Sauerteig.
 
 .. note::
    Die Vorgängerversion zählte jede Zutat mit mindestens 50 % Wassergehalt
@@ -33,21 +35,52 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from brotrechner.core.models import Ingredient, RecipeItem
-from brotrechner.core.nutrients import Nutrients
-from brotrechner.core.tolerances import TOLERANCE_FIELDS, ValueRange, nutrient_ranges
+from brotrechner.core.models import Ingredient, RecipeItem, Stage
+from brotrechner.core.nutrients import NUTRIENT_FIELDS, Nutrients
+from brotrechner.core.portions import Portion
+from brotrechner.core.rounding import as_declarable
+from brotrechner.core.tolerances import ValueRange, nutrient_ranges
 
 __all__ = [
     "DEFAULT_ENERGY_PRICE_EUR_PER_KWH",
+    "FLOUR_MOISTURE_PERCENT",
     "IngredientLine",
     "RecipeAnalysis",
     "ResolvedItem",
+    "StageSummary",
+    "added_water_percent",
     "analyze",
     "resolve_items",
 ]
 
 #: Vorbelegung Strompreis; frei änderbar in der Oberfläche.
 DEFAULT_ENERGY_PRICE_EUR_PER_KWH: Final = 0.35
+
+#: Eigenfeuchte von Mehl in Prozent (handelsüblich 12-15 %). Steckt Mehl in
+#: einer Zutat wie einem Sauerteig, gehört dieses Wasser zum Mehlanteil und
+#: nicht zum Schüttwasser. Mit demselben Wert sind die Sauerteige der
+#: Startdatenbank berechnet: 100 g Mehl und 100 g Wasser ergeben 113 g Wasser
+#: auf 200 g, also die dort hinterlegten 56,5 %.
+FLOUR_MOISTURE_PERCENT: Final = 13.0
+
+
+def added_water_percent(ingredient: Ingredient) -> float:
+    """Schüttwasser je 100 g Zutat.
+
+    Das ist das enthaltene Wasser ohne die Eigenfeuchte des Mehlanteils. Es
+    kann weder negativ werden (trockener Vorteig) noch größer sein als der Teil
+    der Zutat, der kein Mehl ist - bei reinem Mehl also immer 0, gleich wie
+    feucht es ist.
+
+    Args:
+        ingredient: Zutat mit Wassergehalt und Mehlanteil.
+
+    Returns:
+        Schüttwasser in Gramm je 100 g Zutat.
+    """
+    flour = ingredient.flour_fraction * 100.0
+    free_water = ingredient.nutrients.water - flour * FLOUR_MOISTURE_PERCENT / 100.0
+    return min(max(0.0, free_water), 100.0 - flour)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +89,7 @@ class ResolvedItem:
 
     ingredient: Ingredient
     amount_g: float
+    stage: Stage = Stage.MAIN
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,10 +107,49 @@ class IngredientLine:
     """Materialkosten dieser Zeile in Euro."""
     water_g: float
     """Im Zutatenanteil enthaltenes Wasser."""
+    stage: Stage = Stage.MAIN
 
     @property
     def has_price(self) -> bool:
         return self.ingredient.has_price
+
+
+@dataclass(frozen=True, slots=True)
+class StageSummary:
+    """Kennzahlen einer Stufe - aus dem, was für sie abgewogen wird.
+
+    Anders als die übrigen Werte der Auswertung sind sie nicht auf das
+    gemessene Rohteiggewicht umgerechnet: Sie sagen, was in die Schüssel der
+    Stufe kommt.
+    """
+
+    stage: Stage
+    weight_g: float
+    """Summe der Zutaten der Stufe."""
+    flour_g: float
+    """Mehl der Stufe, auch das in einem Anstellgut."""
+    water_g: float
+    """Schüttwasser der Stufe."""
+    flour_share_percent: float
+    """Anteil am Mehl des ganzen Rezepts - beim Sauerteig die versäuerte Mehlmenge."""
+
+    @property
+    def dough_yield(self) -> float:
+        """Teigausbeute der Stufe; 0 ohne Mehl."""
+        if self.flour_g <= 0:
+            return 0.0
+        return (self.flour_g + self.water_g) / self.flour_g * 100.0
+
+    @property
+    def ratio_text(self) -> str:
+        """Teigausbeute und Mehlanteil, etwa "TA 200 · 40 % des Mehls".
+
+        Beide ändern sich nicht, wenn alle Mengen auf den gewogenen Rohteig
+        umgerechnet werden - anders als das Gewicht der Stufe.
+        """
+        if self.flour_g <= 0:
+            return "ohne Mehl"
+        return f"TA {self.dough_yield:.0f} · {self.flour_share_percent:.0f} % des Mehls"
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +181,7 @@ class RecipeAnalysis:
     per_100g: Nutrients = field(default_factory=Nutrients)
     """Nährwerte je 100 g fertig gebackenes Brot."""
     ranges_per_100g: dict[str, ValueRange] = field(default_factory=dict)
-    """Deklarationsbandbreiten je 100 g gebacken."""
+    """Zulässige Abweichung der Angaben je 100 g gebacken (EU-Toleranzen)."""
 
     # Kosten
     material_cost: float = 0.0
@@ -118,9 +191,50 @@ class RecipeAnalysis:
     energy_kwh: float = 0.0
     energy_price: float = DEFAULT_ENERGY_PRICE_EUR_PER_KWH
 
+    # Portion
+    portion: Portion | None = None
+    """Portion für Angaben je Scheibe oder Stück; ``None`` heißt nur je 100 g."""
+
+    # Stufen
+    stages: tuple[StageSummary, ...] = ()
+    """Kennzahlen je Stufe in Backreihenfolge, nur Stufen mit Zutaten."""
+
+    @property
+    def has_stages(self) -> bool:
+        """Hat das Rezept Stufen außer dem Hauptteig?"""
+        return any(summary.stage is not Stage.MAIN for summary in self.stages)
+
     @property
     def is_empty(self) -> bool:
         return not self.lines
+
+    @property
+    def per_portion(self) -> Nutrients | None:
+        """Nährwerte je Portion, aus den ungerundeten Werten je 100 g."""
+        portion = self._usable_portion()
+        return portion.nutrients(self.per_100g) if portion else None
+
+    @property
+    def cost_per_portion(self) -> float | None:
+        """Kosten je Portion in Euro."""
+        portion = self._usable_portion()
+        return portion.cost(self.cost_per_100g) if portion else None
+
+    @property
+    def portion_count(self) -> float | None:
+        """Wie viele Portionen das Brot ergibt."""
+        portion = self._usable_portion()
+        return portion.count(self.baked_weight_g) if portion else None
+
+    def _usable_portion(self) -> Portion | None:
+        """Die Portion, sofern es Werte je Portion gibt.
+
+        Dafür braucht es Zutaten und das Gewicht des Brots - ohne sie gibt es
+        auch keine Werte je 100 g.
+        """
+        if self.is_empty or self.baked_weight_g <= 0:
+            return None
+        return self.portion
 
     @property
     def cost_per_kg(self) -> float:
@@ -176,7 +290,7 @@ def resolve_items(
         if ingredient is None:
             missing.append(item)
             continue
-        resolved.append(ResolvedItem(ingredient, item.amount_g))
+        resolved.append(ResolvedItem(ingredient, item.amount_g, item.stage))
     return resolved, missing
 
 
@@ -187,6 +301,7 @@ def analyze(
     dough_weight_g: float = 0.0,
     energy_kwh: float = 0.0,
     energy_price: float = DEFAULT_ENERGY_PRICE_EUR_PER_KWH,
+    portion: Portion | None = None,
 ) -> RecipeAnalysis:
     """Wertet ein Rezept vollständig aus.
 
@@ -199,6 +314,7 @@ def analyze(
             wirkt sich Teig, der in der Schüssel bleibt, korrekt aus.
         energy_kwh: Energieverbrauch des Backvorgangs.
         energy_price: Strompreis in Euro je kWh.
+        portion: Portion für die Angaben je Scheibe oder Stück.
 
     Returns:
         Auswertung; bei leerer Zutatenliste ein leeres :class:`RecipeAnalysis`.
@@ -213,20 +329,17 @@ def analyze(
             baked_weight_g=max(0.0, baked_weight_g),
             energy_kwh=energy_kwh,
             energy_price=energy_price,
+            portion=portion,
         )
 
     weighed = sum(item.amount_g for item in items)
     effective_dough = dough_weight_g if dough_weight_g > 0 else weighed
     scale = effective_dough / weighed if weighed > 0 else 1.0
 
-    flour_mass = sum(i.amount_g * scale for i in items if i.ingredient.is_flour)
-    # Schüttwasser: nur das Wasser der Nicht-Mehl-Zutaten. Die Eigenfeuchte des
-    # Mehls steckt bereits in der Mehlmenge, mit der die TA definiert ist.
-    water_mass = sum(
-        i.amount_g * scale * i.ingredient.nutrients.water / 100.0
-        for i in items
-        if not i.ingredient.is_flour
-    )
+    flour_mass = sum(i.amount_g * scale * i.ingredient.flour_fraction for i in items)
+    # Schüttwasser: nur das Wasser außerhalb des Mehlanteils. Die Eigenfeuchte
+    # des Mehls steckt bereits in der Mehlmenge, mit der die TA definiert ist.
+    water_mass = sum(i.amount_g * scale * added_water_percent(i.ingredient) / 100.0 for i in items)
 
     total = Nutrients()
     material_cost = 0.0
@@ -244,6 +357,7 @@ def analyze(
                 baker_percent=amount / flour_mass * 100.0 if flour_mass > 0 else 0.0,
                 cost=cost,
                 water_g=amount * item.ingredient.nutrients.water / 100.0,
+                stage=item.stage,
             )
         )
 
@@ -272,61 +386,58 @@ def analyze(
         hydration_percent=water_mass / flour_mass * 100.0 if flour_mass > 0 else 0.0,
         total=total,
         per_100g=per_100g,
-        ranges_per_100g=_ranges_per_100g(items, scale, baked_weight_g, per_100g),
+        ranges_per_100g=_ranges_per_100g(per_100g, baked_weight_g=baked_weight_g),
         material_cost=material_cost,
         energy_cost=energy_cost,
         total_cost=total_cost,
         cost_per_100g=total_cost / baked_weight_g * 100.0 if baked_weight_g > 0 else 0.0,
         energy_kwh=energy_kwh,
         energy_price=energy_price,
+        portion=portion,
+        stages=_stage_summaries(items),
     )
 
 
-def _ranges_per_100g(
-    items: list[ResolvedItem],
-    scale: float,
-    baked_weight_g: float,
-    per_100g: Nutrients,
-) -> dict[str, ValueRange]:
-    """Summiert die Toleranzen der Einzelzutaten zur Rezeptbandbreite.
-
-    Die Toleranz gilt je Zutat und je 100 g Zutat; sie wird mit der jeweiligen
-    Menge gewichtet aufaddiert und anschließend auf 100 g Brot bezogen. Das ist
-    der konservative Fall, in dem alle Zutaten gleichzeitig am selben Rand ihrer
-    Toleranz liegen.
-    """
-    if baked_weight_g <= 0 or not items:
-        return {}
-
-    minima = dict.fromkeys(TOLERANCE_FIELDS, 0.0)
-    maxima = dict.fromkeys(TOLERANCE_FIELDS, 0.0)
-    for item in items:
-        ratio = item.amount_g * scale / 100.0
-        item_ranges = nutrient_ranges(item.ingredient.nutrients)
-        for name in TOLERANCE_FIELDS:
-            minima[name] += item_ranges[name].minimum * ratio
-            maxima[name] += item_ranges[name].maximum * ratio
-
-    factor = 100.0 / baked_weight_g
-    aggregated = Nutrients(**{name: minima[name] * factor for name in TOLERANCE_FIELDS})
-    aggregated_max = Nutrients(**{name: maxima[name] * factor for name in TOLERANCE_FIELDS})
-
-    ranges = {
-        name: ValueRange(
-            getattr(per_100g, name),
-            getattr(aggregated, name),
-            getattr(aggregated_max, name),
+def _stage_summaries(items: list[ResolvedItem]) -> tuple[StageSummary, ...]:
+    """Gewicht, Mehl, Schüttwasser und Mehlanteil je Stufe, in Backreihenfolge."""
+    total_flour = sum(i.amount_g * i.ingredient.flour_fraction for i in items)
+    summaries: list[StageSummary] = []
+    for stage in Stage:
+        members = [item for item in items if item.stage is stage]
+        if not members:
+            continue
+        flour = sum(i.amount_g * i.ingredient.flour_fraction for i in members)
+        summaries.append(
+            StageSummary(
+                stage=stage,
+                weight_g=sum(i.amount_g for i in members),
+                flour_g=flour,
+                water_g=sum(
+                    i.amount_g * added_water_percent(i.ingredient) / 100.0 for i in members
+                ),
+                flour_share_percent=flour / total_flour * 100.0 if total_flour > 0 else 0.0,
+            )
         )
-        for name in TOLERANCE_FIELDS
-    }
-    # Brennwert konsistent aus den Nährstoffgrenzen ableiten (siehe tolerances).
-    energy_min = aggregated.computed_energy_kcal
-    energy_max = aggregated_max.computed_energy_kcal
-    declared = per_100g.energy_kcal
-    ranges["energy_kcal"] = ValueRange(
-        declared, max(0.0, min(energy_min, declared)), max(energy_max, declared)
-    )
-    return ranges
+    return tuple(summaries)
+
+
+def _ranges_per_100g(per_100g: Nutrients, *, baked_weight_g: float) -> dict[str, ValueRange]:
+    """Zulässige Abweichung der Angaben je 100 g des fertigen Brots.
+
+    Die Toleranzen der EU-Leitlinie gelten für den angegebenen Wert des
+    Lebensmittels, das kontrolliert wird - hier also für das Brot, nicht für
+    seine Zutaten. Früher stand hier die mengengewichtete Summe der
+    Zutatentoleranzen; das ist eine andere Größe, die mit der Kontrolle eines
+    Brots nichts zu tun hat.
+
+    Negative oder nicht endliche Werte entstehen nur aus fehlerhaften Zutaten
+    (die Datenprüfung meldet sie); sie werden hier wie 0 behandelt, damit die
+    Auswertung nicht abbricht.
+    """
+    if baked_weight_g <= 0:
+        return {}
+    clean = Nutrients(**{name: as_declarable(getattr(per_100g, name)) for name in NUTRIENT_FIELDS})
+    return nutrient_ranges(clean)
 
 
 def _validate_inputs(

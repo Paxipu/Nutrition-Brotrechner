@@ -23,18 +23,24 @@ Jetzt gilt:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
+from html import escape
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
+    QRadioButton,
     QScrollArea,
     QSplitter,
     QTableView,
@@ -46,10 +52,20 @@ from brotrechner.core.analysis import (
     DEFAULT_ENERGY_PRICE_EUR_PER_KWH,
     RecipeAnalysis,
     ResolvedItem,
+    StageSummary,
     analyze,
 )
-from brotrechner.core.models import Ingredient, Recipe, RecipeItem
-from brotrechner.gui.models.recipe_model import RECIPE_COLUMNS, RecipeItemsModel
+from brotrechner.core.models import Ingredient, Recipe, RecipeItem, Stage
+from brotrechner.core.plausibility import ProcessFinding, check_process, has_errors
+from brotrechner.core.portions import MAX_NAME_LENGTH, MAX_WEIGHT_G, SUGGESTED_NAMES, Portion
+from brotrechner.core.validation import Severity
+from brotrechner.gui.models.recipe_model import (
+    MANUFACTURER_COLUMN,
+    NAME_COLUMN,
+    RECIPE_COLUMNS,
+    STAGE_COLUMN,
+    RecipeItemsModel,
+)
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import Card, StatCard
 from brotrechner.gui.widgets.ingredient_picker import IngredientPicker
@@ -61,6 +77,9 @@ __all__ = ["CalculatorPage"]
 #: Wartezeit nach der letzten Eingabe, bevor neu gerechnet wird. Kurz genug,
 #: dass es unmittelbar wirkt, lang genug, dass Tippen nicht ruckelt.
 _RECALC_DELAY_MS = 180
+
+#: Überschrift der Nährwertkarte, solange sie Werte je 100 g zeigt.
+_NUTRITION_TITLE = "Nährwerte je 100 g gebacken"
 
 
 class CalculatorPage(QWidget):
@@ -84,6 +103,9 @@ class CalculatorPage(QWidget):
         self._recalc_timer.timeout.connect(self._recalculate)
 
         self._build_ui()
+        # Fingerabdruck des zuletzt geladenen, gespeicherten oder geleerten
+        # Stands; weicht der Rechner davon ab, ginge beim Leeren etwas verloren.
+        self._saved_state: tuple[object, ...] = ()
         self._connect()
         self._recalculate()
 
@@ -122,6 +144,15 @@ class CalculatorPage(QWidget):
         mix_card = Card("Zutaten")
         row = QHBoxLayout()
         row.setSpacing(SPACING["sm"])
+        self.cmb_stage = QComboBox()
+        for stage in Stage:
+            self.cmb_stage.addItem(stage.label, stage)
+        self.cmb_stage.setCurrentIndex(list(Stage).index(Stage.MAIN))
+        self.cmb_stage.setToolTip(
+            "Stufe, in die die nächste Zutat kommt - etwa das Mehl für den\n"
+            "Sauerteig. Bereits eingetragene Zeilen verlegt ein Rechtsklick."
+        )
+        row.addWidget(self.cmb_stage)
         self.picker = IngredientPicker()
         self.spin_amount = QDoubleSpinBox()
         self.spin_amount.setRange(0.0, 100_000.0)
@@ -152,7 +183,9 @@ class CalculatorPage(QWidget):
         header = self.table.horizontalHeader()
         for column, (_, width, _) in enumerate(RECIPE_COLUMNS):
             self.table.setColumnWidth(column, width)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._update_optional_columns()
         mix_card.add_widget(self.table, 1)
 
         self.lbl_summary = QLabel()
@@ -211,10 +244,81 @@ class CalculatorPage(QWidget):
             form.addWidget(caption, 0, column)
             form.addWidget(widget, 1, column)
             form.setColumnStretch(column, 1)
+        self._build_portion_row(form)
         process_card.body.addLayout(form)
+
+        # Befunde der Plausibilitätsprüfung: Ein Tippfehler beim Brotgewicht
+        # verzerrt jede Angabe je 100 g und soll sofort auffallen.
+        self.lbl_process = QLabel()
+        self.lbl_process.setWordWrap(True)
+        self.lbl_process.setTextFormat(Qt.TextFormat.RichText)
+        self.lbl_process.setVisible(False)
+        process_card.add_widget(self.lbl_process)
         layout.addWidget(process_card)
 
         return container
+
+    def _build_portion_row(self, form: QGridLayout) -> None:
+        """Portion: Bezeichnung und Gewicht, darunter im Raster des Backprozesses."""
+        self.cmb_portion = QComboBox()
+        self.cmb_portion.setEditable(True)
+        self.cmb_portion.addItems(SUGGESTED_NAMES)
+        self.cmb_portion.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        edit = self.cmb_portion.lineEdit()
+        if edit is not None:
+            edit.setMaxLength(MAX_NAME_LENGTH)
+        self.cmb_portion.setToolTip(
+            "Bezeichnung einer Portion, etwa Scheibe oder Brötchen - aus der Liste\n"
+            "oder frei eingetragen."
+        )
+        self.spin_portion = QDoubleSpinBox()
+        self.spin_portion.setRange(0.0, MAX_WEIGHT_G)
+        self.spin_portion.setDecimals(1)
+        self.spin_portion.setSuffix(" g")
+        self.spin_portion.setSpecialValueText("—")
+        self.spin_portion.setToolTip(
+            "Gewicht einer Portion des fertigen Brots. Mit einem Gewicht zeigen\n"
+            "Rechner, Bericht und Etikett die Werte zusätzlich je Portion."
+        )
+        self.lbl_portion = QLabel()
+        self.lbl_portion.setObjectName("Muted")
+
+        for column, text in enumerate(("Portion", "Gewicht je Portion")):
+            caption = QLabel(text)
+            caption.setObjectName("Muted")
+            form.addWidget(caption, 2, column)
+        form.addWidget(self.cmb_portion, 3, 0)
+        form.addWidget(self.spin_portion, 3, 1)
+        form.addWidget(self.lbl_portion, 3, 2, 1, 2)
+
+    def _build_basis_row(self) -> QWidget:
+        """Umschalter zwischen Werten je 100 g und je Portion.
+
+        Eine eigene Spalte je Portion machte die Tafel breiter, als die
+        Auswertungsspalte ist. Sichtbar nur, wenn eine Portion eingetragen ist.
+        """
+        self.basis_row = QWidget()
+        row = QHBoxLayout(self.basis_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(SPACING["md"])
+        caption = QLabel("Bezug")
+        caption.setObjectName("Muted")
+        self.rb_per_100g = QRadioButton("je 100 g")
+        self.rb_per_100g.setChecked(True)
+        self.rb_per_portion = QRadioButton("je Portion")
+        self.rb_per_portion.setToolTip(
+            "Werte und Referenzmenge je Portion. Ampel und Bandbreite gelten\n"
+            "immer je 100 g - einen anderen Bezug gibt es für sie nicht."
+        )
+        group = QButtonGroup(self.basis_row)
+        for button in (self.rb_per_100g, self.rb_per_portion):
+            group.addButton(button)
+        row.addWidget(caption)
+        row.addWidget(self.rb_per_100g)
+        row.addWidget(self.rb_per_portion)
+        row.addStretch(1)
+        self.basis_row.setVisible(False)
+        return self.basis_row
 
     def _build_result_column(self) -> QWidget:
         scroll = QScrollArea()
@@ -232,7 +336,7 @@ class CalculatorPage(QWidget):
         # Kennzahlen
         stats = QGridLayout()
         stats.setSpacing(SPACING["sm"])
-        self.stat_energy = StatCard("Energie je 100 g", "—")
+        self.stat_energy = StatCard("Brennwert je 100 g", "—")
         self.stat_weight = StatCard("Gebacken", "—")
         self.stat_yield = StatCard("Teigausbeute", "—")
         self.stat_cost = StatCard("Kosten je kg", "—")
@@ -247,14 +351,17 @@ class CalculatorPage(QWidget):
         layout.addLayout(stats)
 
         # Nährwerte
-        nutrition_card = Card("Nährwerte je 100 g gebacken")
+        nutrition_card = Card(_NUTRITION_TITLE)
+        self.nutrition_card = nutrition_card
         self.chk_ranges = QCheckBox("Toleranzen")
         self.chk_ranges.setChecked(True)
         self.chk_ranges.setToolTip(
-            "Zeigt die Bandbreite, in der die Werte nach den EU-Deklarations-\n"
-            "toleranzen liegen dürfen (Guidance-Dokument der Kommission, 2012)."
+            "Zeigt, wie weit ein Laborwert des fertigen Brots von der Angabe\n"
+            "abweichen darf, ohne dass sie als falsch gilt - nach Tabelle 1 der\n"
+            "Leitlinie der EU-Kommission zu Toleranzen (Dezember 2012)."
         )
         nutrition_card.add_header_widget(self.chk_ranges)
+        nutrition_card.add_widget(self._build_basis_row())
         self.nutrition = NutritionPanel(self._tokens)
         nutrition_card.add_widget(self.nutrition)
         layout.addWidget(nutrition_card)
@@ -292,9 +399,24 @@ class CalculatorPage(QWidget):
         self._items_model.rowsInserted.connect(lambda *_: self._schedule())
         self._items_model.rowsRemoved.connect(lambda *_: self._schedule())
         self._items_model.modelReset.connect(self._schedule)
+        for signal in (
+            self._items_model.rowsInserted,
+            self._items_model.rowsRemoved,
+            self._items_model.modelReset,
+        ):
+            signal.connect(lambda *_: self._update_optional_columns())
+        self.table.customContextMenuRequested.connect(self._on_table_menu)
 
-        for spin in (self.spin_dough, self.spin_baked, self.spin_kwh, self.spin_price):
+        for spin in (
+            self.spin_dough,
+            self.spin_baked,
+            self.spin_kwh,
+            self.spin_price,
+            self.spin_portion,
+        ):
             spin.valueChanged.connect(lambda *_: self._schedule())
+        self.cmb_portion.editTextChanged.connect(lambda *_: self._schedule())
+        self.rb_per_portion.toggled.connect(lambda *_: self._render_nutrition(self._analysis))
 
     # ── Zustand ───────────────────────────────────────────────────────────
 
@@ -308,6 +430,14 @@ class CalculatorPage(QWidget):
         """Eingetragener Rezeptname, oder ein Ersatzname."""
         return self.txt_name.text().strip() or "Unbenanntes Rezept"
 
+    @property
+    def portion(self) -> Portion | None:
+        """Eingetragene Portion; ohne Gewicht gibt es keine."""
+        weight = self.spin_portion.value()
+        if weight <= 0:
+            return None
+        return Portion(self.cmb_portion.currentText(), weight)
+
     def set_ingredients(self, ingredients: Sequence[Ingredient]) -> None:
         """Übernimmt eine geänderte Zutatendatenbank.
 
@@ -320,7 +450,7 @@ class CalculatorPage(QWidget):
         refreshed: list[ResolvedItem] = []
         for item in self._items_model.items:
             current = self._ingredients.get(item.ingredient.key, item.ingredient)
-            refreshed.append(ResolvedItem(current, item.amount_g))
+            refreshed.append(replace(item, ingredient=current))
         if refreshed:
             self._items_model.set_items(refreshed)
         self._schedule()
@@ -341,6 +471,7 @@ class CalculatorPage(QWidget):
         self.spin_baked.setValue(recipe.baked_weight_g)
         self.spin_dough.setValue(recipe.dough_weight_g)
         self.spin_kwh.setValue(recipe.energy_kwh)
+        self._show_portion(recipe.portion)
 
         resolved: list[ResolvedItem] = []
         missing: list[RecipeItem] = []
@@ -349,10 +480,11 @@ class CalculatorPage(QWidget):
             if ingredient is None:
                 missing.append(item)
                 continue
-            resolved.append(ResolvedItem(ingredient, item.amount_g))
+            resolved.append(ResolvedItem(ingredient, item.amount_g, item.stage))
 
         self._items_model.set_items(resolved)
         self._recalculate()
+        self.mark_saved()
         return missing
 
     def to_recipe(self) -> Recipe:
@@ -365,12 +497,14 @@ class CalculatorPage(QWidget):
                     name=item.ingredient.name,
                     manufacturer=item.ingredient.manufacturer,
                     amount_g=item.amount_g,
+                    stage=item.stage,
                 )
                 for item in self._items_model.items
             ],
             baked_weight_g=self.spin_baked.value(),
             dough_weight_g=self.spin_dough.value(),
             energy_kwh=self.spin_kwh.value(),
+            portion=self.portion,
         )
 
     def clear(self) -> None:
@@ -380,7 +514,40 @@ class CalculatorPage(QWidget):
         self.spin_baked.setValue(0.0)
         self.spin_dough.setValue(0.0)
         self.spin_kwh.setValue(0.0)
+        self._show_portion(None)
         self._recalculate()
+        self.mark_saved()
+
+    def _show_portion(self, portion: Portion | None) -> None:
+        """Trägt eine Portion ein; ``None`` leert das Gewicht."""
+        self.cmb_portion.setEditText(portion.name if portion else SUGGESTED_NAMES[0])
+        self.spin_portion.setValue(portion.weight_g if portion else 0.0)
+
+    @property
+    def has_unsaved_changes(self) -> bool:
+        """Ginge beim Leeren etwas verloren?
+
+        Ein Rechner ohne Zutaten hat nichts zu verlieren - ein Rezept ohne
+        Zutaten lässt sich ohnehin nicht speichern.
+        """
+        return bool(self._items_model.items) and self._state() != self._saved_state
+
+    def mark_saved(self) -> None:
+        """Merkt sich den jetzigen Stand als gespeichert."""
+        self._saved_state = self._state()
+
+    def _state(self) -> tuple[object, ...]:
+        """Fingerabdruck dessen, was ein Speichern festhielte."""
+        return (
+            self.txt_name.text().strip(),
+            tuple(
+                (item.ingredient.key, item.amount_g, item.stage) for item in self._items_model.items
+            ),
+            self.spin_baked.value(),
+            self.spin_dough.value(),
+            self.spin_kwh.value(),
+            self.portion,
+        )
 
     # ── Bedienung ─────────────────────────────────────────────────────────
 
@@ -411,18 +578,53 @@ class CalculatorPage(QWidget):
             self.spin_amount.setFocus()
             return
 
-        self._items_model.add_item(ingredient, amount)
+        self._items_model.add_item(ingredient, amount, self.cmb_stage.currentData())
         self.spin_amount.setValue(0.0)
         self.picker.setCurrentIndex(-1)
         self.picker.clearEditText()
         self.picker.setFocus()
 
+    def _selected_rows(self) -> list[int]:
+        return sorted({index.row() for index in self.table.selectionModel().selectedRows()})
+
+    def _stage_menu(self) -> QMenu | None:
+        """Menü, das die markierten Zeilen in eine Stufe verlegt; ohne Auswahl keins."""
+        rows = self._selected_rows()
+        if not rows:
+            return None
+        items = self._items_model.items
+        current = {items[row].stage for row in rows}
+        menu = QMenu(self.table)
+        menu.addSection("In Stufe verlegen")
+        for stage in Stage:
+            action = menu.addAction(stage.label)
+            action.setCheckable(True)
+            action.setChecked(current == {stage})
+            action.triggered.connect(lambda _=False, s=stage: self._items_model.set_stage(rows, s))
+        return menu
+
+    def _on_table_menu(self, position: QPoint) -> None:
+        menu = self._stage_menu()
+        if menu is not None:
+            menu.exec(self.table.viewport().mapToGlobal(position))
+
+    def _update_optional_columns(self) -> None:
+        """Stufe und Hersteller nur, wenn sie etwas zu sagen haben.
+
+        Die meisten Brote haben nur einen Hauptteig, die meisten Zutaten keinen
+        Hersteller - beide Spalten kosteten sonst den Platz, der dem
+        Zutatennamen fehlte.
+        """
+        model = self._items_model
+        self.table.setColumnHidden(STAGE_COLUMN, not model.has_stages)
+        self.table.setColumnHidden(MANUFACTURER_COLUMN, not model.has_manufacturers)
+
     def _on_remove(self) -> None:
-        rows = {index.row() for index in self.table.selectionModel().selectedRows()}
+        rows = self._selected_rows()
         if not rows:
             self.status_message.emit("Bitte zuerst eine Zeile auswählen.")
             return
-        self._items_model.remove_rows(sorted(rows))
+        self._items_model.remove_rows(rows)
 
     # ── Berechnung ────────────────────────────────────────────────────────
 
@@ -438,6 +640,7 @@ class CalculatorPage(QWidget):
             dough_weight_g=self.spin_dough.value(),
             energy_kwh=self.spin_kwh.value(),
             energy_price=self.spin_price.value(),
+            portion=self.portion,
         )
         self._items_model.set_analysis(self._analysis)
         self._render(self._analysis)
@@ -445,16 +648,43 @@ class CalculatorPage(QWidget):
 
     def _render(self, analysis: RecipeAnalysis) -> None:
         """Überträgt die Auswertung in die rechte Spalte."""
+        findings = check_process(analysis)
         self._render_summary(analysis)
-        self._render_stats(analysis)
+        self._render_stats(analysis, findings)
 
-        if analysis.is_empty or analysis.baked_weight_g <= 0:
-            self.nutrition.clear()
-        else:
-            self.nutrition.update_values(analysis.per_100g, analysis.ranges_per_100g)
+        self._render_nutrition(analysis)
+        self.lbl_portion.setText(_portion_text(analysis))
 
         self.lbl_baking.setText(_baking_text(analysis))
         self.lbl_cost.setText(_cost_html(analysis))
+        self._render_process(findings)
+
+    def _render_nutrition(self, analysis: RecipeAnalysis) -> None:
+        """Nährwerttafel je 100 g - oder je Portion, wenn so gewählt."""
+        portion = analysis.portion
+        per_portion = analysis.per_portion
+        self.basis_row.setVisible(per_portion is not None)
+        if portion is not None:
+            self.rb_per_portion.setText(f"je {portion.title}")
+        if analysis.is_empty or analysis.baked_weight_g <= 0:
+            self.nutrition_card.set_title(_NUTRITION_TITLE)
+            self.chk_ranges.setEnabled(True)
+            self.nutrition.clear()
+            return
+        if portion is not None and per_portion is not None and self.rb_per_portion.isChecked():
+            basis = f"je {portion.title}"
+            self.nutrition_card.set_title(f"Nährwerte {basis}")
+            self.chk_ranges.setEnabled(False)
+            self.nutrition.update_values(per_portion, basis=basis, levels=analysis.per_100g)
+            return
+        self.nutrition_card.set_title(_NUTRITION_TITLE)
+        self.chk_ranges.setEnabled(True)
+        self.nutrition.update_values(analysis.per_100g, analysis.ranges_per_100g)
+
+    def _render_process(self, findings: Sequence[ProcessFinding]) -> None:
+        """Zeigt die Befunde der Plausibilitätsprüfung, ohne Befund nichts."""
+        self.lbl_process.setVisible(bool(findings))
+        self.lbl_process.setText(findings_html(findings, self._tokens))
 
     def _render_summary(self, analysis: RecipeAnalysis) -> None:
         if analysis.is_empty:
@@ -468,10 +698,10 @@ class CalculatorPage(QWidget):
         if analysis.dough_yield > 0:
             parts.append(f"TA {analysis.dough_yield:.0f}")
         if abs(analysis.scale_factor - 1.0) > 0.005:
-            parts.append(f"Skalierung ×{analysis.scale_factor:.3f}")
+            parts.append(f"Skalierung ×{format_number(analysis.scale_factor, 3)}")
         self.lbl_summary.setText("   ·   ".join(parts))
 
-    def _render_stats(self, analysis: RecipeAnalysis) -> None:
+    def _render_stats(self, analysis: RecipeAnalysis, findings: Sequence[ProcessFinding]) -> None:
         if analysis.is_empty or analysis.baked_weight_g <= 0:
             for card in (self.stat_energy, self.stat_weight, self.stat_yield, self.stat_cost):
                 card.set_value("—")
@@ -484,7 +714,9 @@ class CalculatorPage(QWidget):
         )
         self.stat_weight.set_value(
             f"{analysis.baked_weight_g:.0f} g",
-            f"Backverlust {analysis.water_loss_percent:.1f} %",
+            "⚠ unmöglich - siehe Backprozess"
+            if has_errors(findings)
+            else f"Backverlust {format_number(analysis.water_loss_percent, 1)} %",
         )
         yield_hint = (
             f"Hydration {analysis.hydration_percent:.0f} %"
@@ -498,6 +730,16 @@ class CalculatorPage(QWidget):
         self.stat_cost.set_value(format_currency(analysis.cost_per_kg), hint)
 
 
+def findings_html(findings: Sequence[ProcessFinding], tokens: Tokens) -> str:
+    """Befunde als farbige Liste: Fehler rot, Warnungen orange."""
+    items = "".join(
+        f"<li style='color:{tokens.danger if f.severity is Severity.ERROR else tokens.warning}'>"
+        f"{escape(f.message)}</li>"
+        for f in findings
+    )
+    return f"<ul style='margin:0; padding-left:14px'>{items}</ul>" if items else ""
+
+
 def _weight_spin(tooltip: str) -> QDoubleSpinBox:
     """Gewichtseingabe in Gramm."""
     spin = QDoubleSpinBox()
@@ -507,6 +749,19 @@ def _weight_spin(tooltip: str) -> QDoubleSpinBox:
     spin.setSpecialValueText("—")
     spin.setToolTip(tooltip)
     return spin
+
+
+def _portion_text(analysis: RecipeAnalysis) -> str:
+    """Wie viele Portionen das Brot ergibt - leer, solange es keine sinnvolle Zahl gibt.
+
+    Ist die Portion schwerer als das Brot, sagt das die Plausibilitätsprüfung.
+    """
+    portion = analysis.portion
+    if portion is None or analysis.portion_count is None:
+        return ""
+    if not portion.fits_into(analysis.baked_weight_g):
+        return ""
+    return f"ergibt {portion.count_text(analysis.baked_weight_g)}"
 
 
 def _baking_text(analysis: RecipeAnalysis) -> str:
@@ -532,7 +787,17 @@ def _baking_text(analysis: RecipeAnalysis) -> str:
             f"Salz {format_number(salt / analysis.flour_mass_g * 100, 1)} % vom Mehl "
             f"({format_number(salt, 1)} g gesamt). Üblich sind 1,8 bis 2,2 %."
         )
+    if analysis.has_stages:
+        lines.append("\n".join(_stage_line(summary) for summary in analysis.stages))
     return "\n\n".join(lines)
+
+
+def _stage_line(summary: StageSummary) -> str:
+    """Eine Stufe in einer Zeile: was abzuwiegen ist, ihre TA und ihr Mehlanteil."""
+    head = f"{summary.stage.label}: {summary.weight_g:.0f} g"
+    if summary.flour_g <= 0:
+        return f"{head}, ohne Mehl"
+    return f"{head}, TA {summary.dough_yield:.0f}, {summary.flour_share_percent:.0f} % des Mehls"
 
 
 def _cost_html(analysis: RecipeAnalysis) -> str:
@@ -551,6 +816,13 @@ def _cost_html(analysis: RecipeAnalysis) -> str:
         ("Preis je 100 g", format_currency(analysis.cost_per_100g)),
         ("Preis je Kilogramm", format_currency(analysis.cost_per_kg)),
     ]
+    if analysis.portion is not None and analysis.cost_per_portion is not None:
+        rows.append(
+            (
+                f"Preis je {escape(analysis.portion.title)}",
+                format_currency(analysis.cost_per_portion),
+            )
+        )
     body = "".join(
         f"<tr><td style='padding:2px 0'>{label}</td>"
         f"<td align='right' style='padding:2px 0'>{value}</td></tr>"

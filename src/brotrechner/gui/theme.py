@@ -369,5 +369,4 @@ QMenuBar::item:selected {{ background: {t.surface_alt}; }}
 QMenu {{ background: {t.surface}; border: 1px solid {t.border}; padding: 5px; }}
 QMenu::item {{ padding: 6px 24px 6px 20px; border-radius: {t.radius_small}px; }}
 QMenu::item:selected {{ background: {t.accent}; color: {t.accent_text}; }}
-QFrame[role="separator"] {{ background: {t.border}; max-height: 1px; border: none; }}
 """

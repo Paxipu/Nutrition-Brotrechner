@@ -2,6 +2,8 @@
 
 Ersetzt die frühere Monospace-Textausgabe. Der Aufbau folgt der gesetzlichen
 Reihenfolge, damit die Tafel unmittelbar mit dem Etikett vergleichbar ist.
+Dieselbe Tafel zeigt auf Wunsch die Werte je Portion - als eigene Spalte wäre
+sie für die Auswertungsspalte zu breit.
 """
 
 from __future__ import annotations
@@ -9,8 +11,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 
-from brotrechner.core.nutrients import KCAL_TO_KJ, Nutrients
+from brotrechner.core.nutrients import Nutrients
 from brotrechner.core.reference import reference_intake_percent, traffic_light
+from brotrechner.core.rounding import as_declarable, declare_energy, declare_nutrient
 from brotrechner.core.tolerances import ValueRange
 from brotrechner.gui.theme import SPACING, Tokens
 from brotrechner.gui.widgets.cards import AmpelDot, IntakeBar
@@ -42,12 +45,22 @@ class NutritionPanel(QWidget):
         self._grid = grid
 
         headers = ["Nährstoff", "je 100 g", "Bandbreite", "", "% Referenzmenge"]
+        header_labels: list[QLabel] = []
         for column, text in enumerate(headers):
             label = QLabel(text)
             label.setObjectName("Muted")
             if column in (1, 2):
                 label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             grid.addWidget(label, 0, column)
+            header_labels.append(label)
+        self._value_header = header_labels[1]
+        self._range_header = header_labels[2]
+        self._range_header.setToolTip(
+            "Zulässige Abweichung eines Laborwerts des fertigen Brots\n"
+            "(EU-Toleranzen, Leitlinie der Kommission von 2012)."
+        )
+        # Bandbreiten gibt es nur je 100 g; bei Werten je Portion fehlen sie.
+        self._has_ranges = True
 
         self._value_labels: dict[str, QLabel] = {}
         self._range_labels: dict[str, QLabel] = {}
@@ -95,12 +108,13 @@ class NutritionPanel(QWidget):
     def set_show_ranges(self, show: bool) -> None:
         """Blendet die Toleranzspalte ein oder aus."""
         self._show_ranges = show
+        self._apply_range_visibility()
+
+    def _apply_range_visibility(self) -> None:
+        visible = self._show_ranges and self._has_ranges
         for label in self._range_labels.values():
-            label.setVisible(show)
-        header = self._grid.itemAtPosition(0, 2)
-        header_widget = header.widget() if header is not None else None
-        if header_widget is not None:
-            header_widget.setVisible(show)
+            label.setVisible(visible)
+        self._range_header.setVisible(visible)
 
     def set_tokens(self, tokens: Tokens) -> None:
         """Übernimmt einen neuen Farbsatz."""
@@ -114,33 +128,51 @@ class NutritionPanel(QWidget):
         """Setzt alle Zellen auf den Leerzustand."""
         for field in NUTRIENT_ORDER:
             self._value_labels[field].setText("-")
+            self._value_labels[field].setToolTip("")
             self._range_labels[field].setText("")
             self._dots[field].set_level(traffic_light(field, 0.0))
             self._bars[field].set_percent(None)
             self._percent_labels[field].setText("")
+        self._value_header.setText("je 100 g")
+        self._has_ranges = True
+        self._apply_range_visibility()
 
     def update_values(
         self,
         nutrients: Nutrients,
         ranges: dict[str, ValueRange] | None = None,
+        *,
+        basis: str = "je 100 g",
+        levels: Nutrients | None = None,
     ) -> None:
         """Füllt die Tafel mit einer Auswertung.
 
         Args:
-            nutrients: Nährwerte je 100 g.
-            ranges: Toleranzbänder je Feld; ``None`` blendet die Spalte leer.
+            nutrients: Gezeigte Nährwerte - je 100 g oder je Portion.
+            ranges: Toleranzbänder je Feld; ``None`` blendet die Spalte aus.
+                Es gibt sie nur je 100 g.
+            basis: Kopf der Wertespalte, etwa "je Scheibe (50 g)".
+            levels: Werte je 100 g für die Ampel, wenn ``nutrients`` je
+                Portion sind - die Ampel ist nur je 100 g festgelegt.
         """
+        self._value_header.setText(basis)
+        self._has_ranges = ranges is not None
+        self._apply_range_visibility()
         ranges = ranges or {}
+        levels = levels or nutrients
         for field in NUTRIENT_ORDER:
             value = getattr(nutrients, field)
             self._value_labels[field].setText(_format_value(field, value))
+            self._value_labels[field].setToolTip(
+                f"Angabe auf dem Etikett: {declared(field, value)}"
+            )
 
             band = ranges.get(field)
             self._range_labels[field].setText(
                 _format_range(field, band) if band is not None else ""
             )
 
-            self._dots[field].set_level(traffic_light(field, value))
+            self._dots[field].set_level(traffic_light(field, getattr(levels, field)))
 
             percent = reference_intake_percent(field, value)
             self._bars[field].set_percent(percent)
@@ -153,10 +185,17 @@ class NutritionPanel(QWidget):
 
 
 def _format_value(field: str, value: float) -> str:
-    """Formatiert einen Nährwert samt Einheit."""
+    """Formatiert einen Nährwert samt Einheit - genauer als auf dem Etikett."""
     if field == "energy_kcal":
-        return f"{value * KCAL_TO_KJ:.0f} kJ / {value:.0f} kcal"
+        return declare_energy(as_declarable(value))
     return f"{format_number(value, decimals_for(field))} g"
+
+
+def declared(field: str, value: float) -> str:
+    """Die gerundete Angabe, wie sie auf dem Etikett steht."""
+    if field == "energy_kcal":
+        return declare_energy(as_declarable(value))
+    return declare_nutrient(field, as_declarable(value)).text
 
 
 def _format_range(field: str, band: ValueRange) -> str:

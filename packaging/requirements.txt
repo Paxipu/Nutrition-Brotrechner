@@ -1,0 +1,5 @@
+# Bauwerkzeuge für das Windows-Programmpaket, fest versioniert: Ein neues
+# PyInstaller soll nicht unbemerkt ein anderes Paket bauen.
+# pip install ".[pdf]" -r packaging/requirements.txt
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7

@@ -69,6 +69,19 @@ class TestNumberFormatting:
             assert NUTRIENT_LABELS[field]
             assert NUTRIENT_UNITS[field]
 
+    def test_energy_is_called_brennwert(self) -> None:
+        """So heißt es in Artikel 30 und Anhang XV der deutschen Fassung."""
+        assert NUTRIENT_LABELS["energy_kcal"] == "Brennwert"
+
+    def test_the_label_and_the_csv_say_brennwert(self) -> None:
+        from brotrechner.core.nutrients import Nutrients
+        from brotrechner.export.label import _nutrition_rows
+        from brotrechner.export.table import INGREDIENT_COLUMNS
+
+        assert _nutrition_rows(Nutrients(energy_kcal=200), show_fiber=False)[0][0] == "Brennwert"
+        assert "Brennwert (kcal)" in INGREDIENT_COLUMNS
+        assert not any(column.startswith("Energie") for column in INGREDIENT_COLUMNS)
+
     def test_order_matches_the_regulation(self) -> None:
         """Anhang XV VO (EU) Nr. 1169/2011 gibt die Reihenfolge vor."""
         assert NUTRIENT_ORDER[:5] == (
