@@ -21,7 +21,7 @@ from datetime import date
 from pathlib import Path
 
 from PIL import Image
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QImage, QPixmap, QResizeEvent
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtWidgets import (
@@ -90,6 +90,12 @@ _DEFAULT_SHELF_LIFE_DAYS = 7
 #: Gemerkter Wert für "Eigenes Format".
 _CUSTOM_SIZE = "custom"
 
+#: Mindestgröße des Dialogs. Die Höhe richtet sich nach der Seitenspalte: Sie
+#: muss Gestaltung, Inhalt *und* alle Schaltflächen ungestaucht zeigen können.
+#: Breiter wird der Dialog, wenn Vorschau und Spalte mehr verlangen.
+_MIN_WIDTH = 880
+_MIN_HEIGHT = 680
+
 
 def _to_date(value: QDate) -> date:
     """Wandelt ein ``QDate`` in ein Python-Datum."""
@@ -119,6 +125,40 @@ def pil_to_qimage(image: Image.Image) -> QImage:
     data = rgb.tobytes("raw", "RGB")
     qimage = QImage(data, rgb.width, rgb.height, rgb.width * 3, QImage.Format.Format_RGB888)
     return qimage.copy()
+
+
+class _SettingsArea(QScrollArea):
+    """Rollbereich der Seitenspalte: rollt nur senkrecht und ist so breit wie sein Inhalt.
+
+    Die Spalte hatte eine feste Breite von 320 Pixeln. Ihr Inhalt brauchte je
+    nach Schrift mehr - die Zeile für das eigene Format, die Liste der
+    Druckarten -, und die senkrechte Bildlaufleiste nahm noch etwas weg. Der
+    Rollbereich schnitt die Karten deshalb rechts ab, und ein größeres Fenster
+    half nicht (Issue #2). Jetzt richtet sich die Breite nach dem Inhalt samt
+    Bildlaufleiste - gemessen erst, wenn Schrift und Stylesheet feststehen.
+    """
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt-Vertrag
+        hint = super().minimumSizeHint()
+        content = self.widget()
+        if content is None:  # pragma: no cover - der Dialog setzt immer einen Inhalt
+            return hint
+        width = (
+            content.minimumSizeHint().width()
+            + self.verticalScrollBar().sizeHint().width()
+            + 2 * self.frameWidth()
+        )
+        return QSize(width, hint.height())
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt-Vertrag
+        return QSize(self.minimumSizeHint().width(), super().sizeHint().height())
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt-Vertrag
+        # Eine Zeile wurde ein- oder ausgeblendet, etwa die für das eigene
+        # Format: Die Spalte bestimmt ihre Breite neu.
+        if watched is self.widget() and event.type() == QEvent.Type.LayoutRequest:
+            self.updateGeometry()
+        return super().eventFilter(watched, event)
 
 
 class LabelDialog(QDialog):
@@ -159,9 +199,7 @@ class LabelDialog(QDialog):
         self._fonts = load_font_set()
 
         self.setWindowTitle("Etikett")
-        # Die Höhe richtet sich nach der Seitenspalte: Sie muss Gestaltung,
-        # Inhalt *und* alle Schaltflächen ungestaucht zeigen können.
-        self.setMinimumSize(880, 680)
+        self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
 
         self._build_ui(recipe_name)
         # Beim Wiederherstellen löst jedes Feld ein Neuzeichnen aus - hier
@@ -255,6 +293,24 @@ class LabelDialog(QDialog):
         self._shelf_life_days = (best_before - baked).days
         self.chk_best_before.setChecked(True)
         self._on_baked_changed(self.date_baked.date())
+
+    def event(self, event: QEvent) -> bool:
+        handled = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest:
+            self._fit_minimum_width()
+        return handled
+
+    def _fit_minimum_width(self) -> None:
+        """Mindestens so breit, wie Vorschau und Seitenspalte zusammen verlangen.
+
+        Die feste Mindestbreite ginge dem Layout sonst vor: Braucht die Spalte
+        mit einer breiteren Schrift mehr Platz, würde sie gestaucht und rechts
+        abgeschnitten.
+        """
+        layout = self.layout()
+        if layout is None:  # pragma: no cover - Layout-Anfragen kommen erst nach dem Aufbau
+            return
+        self.setMinimumWidth(max(_MIN_WIDTH, layout.totalMinimumSize().width()))
 
     # ── Aufbau ────────────────────────────────────────────────────────────
 
@@ -403,7 +459,7 @@ class LabelDialog(QDialog):
 
         cards_widget = QWidget()
         cards_widget.setLayout(cards)
-        scroll = QScrollArea()
+        scroll = _SettingsArea()
         scroll.setWidget(cards_widget)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -448,7 +504,8 @@ class LabelDialog(QDialog):
 
         holder = QWidget()
         holder.setLayout(side)
-        holder.setFixedWidth(320)
+        # So breit, wie der Rollbereich es verlangt; mehr Platz bekommt die Vorschau.
+        holder.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         layout.addWidget(holder)
 
         # Verdrahtung

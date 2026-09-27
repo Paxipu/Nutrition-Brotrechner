@@ -114,6 +114,15 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   wortlos. Jetzt erscheint eine Meldung mit ausklappbarem Hergang, und alles
   steht in `brotrechner.log` im Datenverzeichnis (rotierend, höchstens rund
   1,5 MB). Auch der Doppelklick-Starter fängt Abstürze ab und meldet sie.
+- **Die Einstellungen im Etikettdialog waren rechts abgeschnitten**
+  ([#2](https://github.com/Paxipu/Nutrition-Brotrechner/issues/2)). Die
+  Seitenspalte hatte eine feste Breite von 320 Pixeln; ihr Inhalt brauchte je
+  nach Schrift bis zu 380, und die Bildlaufleiste nahm noch etwas weg. Die
+  Karten „Gestaltung“, „Inhalt“, „Verkauf“ und „Druck“ verloren so ihren
+  rechten Rand, ein größeres Fenster half nicht. Jetzt ist die Spalte so breit,
+  wie ihr Inhalt samt Bildlaufleiste braucht - gemessen mit der tatsächlichen
+  Schrift -, und den übrigen Platz bekommt die Vorschau. Reicht die
+  Mindestbreite des Dialogs dafür nicht, wird er breiter.
 - **`--data-dir` galt nicht für den Ausgabeordner.** Ohne Dokumentenordner
   landeten Etiketten, Berichte und CSV-Dateien im Datenverzeichnis des
   Systems, auch wenn das Programm mit `--data-dir` auf ein anderes gerichtet
