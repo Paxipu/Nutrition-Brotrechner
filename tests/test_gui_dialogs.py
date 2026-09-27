@@ -159,9 +159,8 @@ class TestOldRecipesStartAtToday:
 class TestTheSidebarFits:
     """Die beiden Datumsfelder dürfen die Schaltflächen nicht hinausdrängen.
 
-    Die Seitenspalte hat feste Breite und keinen Rollbalken: Was nicht in die
-    Mindesthöhe des Dialogs passt, wird gestaucht - zuerst die Schaltflächen
-    ganz unten.
+    Was nicht in die Mindesthöhe des Dialogs passt, wird gestaucht - zuerst
+    die Schaltflächen ganz unten.
     """
 
     @pytest.mark.parametrize("zuletzt", [None, date(2025, 12, 23)])
@@ -176,13 +175,168 @@ class TestTheSidebarFits:
         )
         dialog.resize(dialog.minimumSize())
         dialog.show()
-        holder = dialog.date_baked.parentWidget()
-        while holder is not None and holder.width() != 320:
-            holder = holder.parentWidget()
+        holder = _settings_area(dialog).parentWidget()
         assert holder is not None, "Seitenspalte nicht gefunden"
         needed = holder.sizeHint().height()
         assert needed <= dialog.height(), f"Seitenspalte braucht {needed} px von {dialog.height()}"
         dialog.close()
+
+
+def _settings_area(dialog):
+    """Der Rollbereich mit den Karten der Seitenspalte."""
+    from PySide6.QtWidgets import QScrollArea
+
+    area = dialog.findChild(QScrollArea)
+    assert area is not None, "Rollbereich der Seitenspalte nicht gefunden"
+    return area
+
+
+def _cut_off(dialog) -> list[str]:
+    """Sichtbare Elemente, die rechts über den sichtbaren Teil der Seitenspalte ragen."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QWidget
+
+    area = _settings_area(dialog)
+    viewport = area.viewport()
+    content = area.widget()
+    found = [
+        f"{type(widget).__name__} {getattr(widget, 'text', lambda: '')()!r}"
+        for widget in [content, *content.findChildren(QWidget)]
+        if widget.isVisible()
+        and widget.mapTo(viewport, QPoint(widget.width(), 0)).x() > viewport.width()
+    ]
+    if area.mapTo(dialog, QPoint(area.width(), 0)).x() > dialog.width():
+        found.append("die Spalte selbst ragt aus dem Dialog")
+    return found
+
+
+def _styled_label_dialog(analysis, tmp_path: Path, *, extra_style: str = ""):
+    """Etikettdialog mit dem Stylesheet des Hauptfensters.
+
+    Erst das Stylesheet setzt Innenabstände und die Breite der Bildlaufleiste -
+    ohne es wären die Maße andere als beim Anwender.
+    """
+    from brotrechner.gui.dialogs.label_dialog import LabelDialog
+    from brotrechner.gui.theme import ThemeMode, build_stylesheet, resolve_tokens
+
+    dialog = LabelDialog(analysis, recipe_name="Probe", default_dir=tmp_path)
+    dialog.setStyleSheet(build_stylesheet(resolve_tokens(ThemeMode.LIGHT)) + extra_style)
+    return dialog
+
+
+def _show_every_row(dialog) -> None:
+    """Verkauf und eigenes Format blenden die breitesten Zeilen ein."""
+    dialog.chk_for_sale.setChecked(True)
+    dialog.cmb_size.setCurrentIndex(dialog.cmb_size.count() - 1)
+
+
+def _settle() -> None:
+    """Lässt Qt die aufgeschobenen Layout-Anfragen abarbeiten.
+
+    Ändert sich die Breite tief in der Seitenspalte - etwa weil das Stylesheet
+    beim Anzeigen greift -, wandert das über mehrere Runden der
+    Ereignisschleife nach oben. Im laufenden Programm dauert das
+    Sekundenbruchteile.
+    """
+    from PySide6.QtWidgets import QApplication
+
+    for _ in range(5):
+        QApplication.processEvents()
+
+
+class TestNothingIsCutOffOnTheRight:
+    """Issue #2: Die Karten der Seitenspalte waren rechts abgeschnitten.
+
+    Die Spalte hatte eine feste Breite von 320 px. Ihr Inhalt brauchte mehr -
+    die Zeile für das eigene Format, die Liste der Druckarten -, und die
+    senkrechte Bildlaufleiste nahm noch etwas weg. Ein größeres Fenster half
+    nicht, weil die Spalte nicht mitwuchs.
+    """
+
+    @pytest.mark.parametrize("size", [(880, 680), (1400, 900)])
+    def test_every_card_is_fully_visible(
+        self, qapp: object, analysis, tmp_path: Path, size: tuple[int, int]
+    ) -> None:
+        del qapp
+        dialog = _styled_label_dialog(analysis, tmp_path)
+        _show_every_row(dialog)
+        dialog.resize(*size)
+        dialog.show()
+        _settle()
+        try:
+            assert _cut_off(dialog) == []
+        finally:
+            dialog.close()
+
+    def test_rows_shown_later_widen_the_column(
+        self, qapp: object, analysis, tmp_path: Path
+    ) -> None:
+        """Die Zeile für das eigene Format erscheint erst, wenn man es wählt."""
+        del qapp
+        dialog = _styled_label_dialog(analysis, tmp_path)
+        dialog.resize(dialog.minimumSize())
+        dialog.show()
+        _settle()
+        _show_every_row(dialog)
+        _settle()
+        try:
+            assert _cut_off(dialog) == []
+        finally:
+            dialog.close()
+
+    def test_a_larger_font_is_not_cut_off(self, qapp: object, analysis, tmp_path: Path) -> None:
+        """13 statt 10 pt: Die Spalte wird breiter, notfalls auch der Dialog."""
+        del qapp
+        dialog = _styled_label_dialog(
+            analysis, tmp_path, extra_style="QWidget { font-size: 13pt; }"
+        )
+        _show_every_row(dialog)
+        dialog.resize(dialog.minimumSize())
+        dialog.show()
+        _settle()
+        try:
+            assert _cut_off(dialog) == []
+        finally:
+            dialog.close()
+
+    def test_a_wider_column_widens_the_dialog(self, qapp: object, analysis, tmp_path: Path) -> None:
+        """Braucht die Spalte mehr, als die Mindestbreite von 880 px lässt, wächst der Dialog.
+
+        Das kann eine breitere Schrift bewirken - ob 13 pt dafür reichen, hängt
+        aber von der Schrift der Plattform ab; auf macOS passen sie noch.
+        Nachgestellt wird es deshalb mit einem Titelfeld, das 600 px verlangt.
+        """
+        del qapp
+        dialog = _styled_label_dialog(analysis, tmp_path)
+        dialog.resize(dialog.minimumSize())
+        dialog.show()
+        _settle()
+        dialog.txt_title.setMinimumWidth(600)
+        _settle()
+        try:
+            assert _cut_off(dialog) == []
+            assert dialog.width() > 880
+        finally:
+            dialog.close()
+
+    def test_a_wider_window_widens_the_preview(
+        self, qapp: object, analysis, tmp_path: Path
+    ) -> None:
+        """Die Spalte ist so breit, wie ihr Inhalt braucht; den Rest bekommt die Vorschau."""
+        del qapp
+        dialog = _styled_label_dialog(analysis, tmp_path)
+        _show_every_row(dialog)
+        dialog.resize(dialog.minimumSize())
+        dialog.show()
+        _settle()
+        column, preview = _settings_area(dialog).width(), dialog.lbl_preview.width()
+        dialog.resize(dialog.width() + 400, dialog.height())
+        _settle()
+        try:
+            assert _settings_area(dialog).width() == column
+            assert dialog.lbl_preview.width() >= preview + 350
+        finally:
+            dialog.close()
 
 
 class TestNotesDialog:
