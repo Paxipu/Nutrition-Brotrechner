@@ -284,12 +284,8 @@ class TestNothingIsCutOffOnTheRight:
         finally:
             dialog.close()
 
-    def test_a_wider_font_widens_the_dialog(self, qapp: object, analysis, tmp_path: Path) -> None:
-        """Braucht die Spalte mehr, als die Mindestbreite von 880 px lässt, wächst der Dialog.
-
-        Mit 13 statt 10 pt passen Vorschau und Spalte nicht mehr nebeneinander
-        in 880 px - die Spalte wurde dann wieder gestaucht.
-        """
+    def test_a_larger_font_is_not_cut_off(self, qapp: object, analysis, tmp_path: Path) -> None:
+        """13 statt 10 pt: Die Spalte wird breiter, notfalls auch der Dialog."""
         del qapp
         dialog = _styled_label_dialog(
             analysis, tmp_path, extra_style="QWidget { font-size: 13pt; }"
@@ -297,6 +293,25 @@ class TestNothingIsCutOffOnTheRight:
         _show_every_row(dialog)
         dialog.resize(dialog.minimumSize())
         dialog.show()
+        _settle()
+        try:
+            assert _cut_off(dialog) == []
+        finally:
+            dialog.close()
+
+    def test_a_wider_column_widens_the_dialog(self, qapp: object, analysis, tmp_path: Path) -> None:
+        """Braucht die Spalte mehr, als die Mindestbreite von 880 px lässt, wächst der Dialog.
+
+        Das kann eine breitere Schrift bewirken - ob 13 pt dafür reichen, hängt
+        aber von der Schrift der Plattform ab; auf macOS passen sie noch.
+        Nachgestellt wird es deshalb mit einem Titelfeld, das 600 px verlangt.
+        """
+        del qapp
+        dialog = _styled_label_dialog(analysis, tmp_path)
+        dialog.resize(dialog.minimumSize())
+        dialog.show()
+        _settle()
+        dialog.txt_title.setMinimumWidth(600)
         _settle()
         try:
             assert _cut_off(dialog) == []
