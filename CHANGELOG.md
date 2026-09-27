@@ -5,6 +5,8 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unveröffentlicht]
 
+## [5.2.0] – 2026-09-27
+
 ### Behoben
 
 - **Sauerteig und Vorteige verfälschten Teigausbeute und Bäckerprozent.** Eine
